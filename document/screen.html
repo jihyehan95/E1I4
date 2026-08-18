@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>문서 생성 담당자 호출</title>
+</head>
+<body>
+<h1>실제로 담당자를 부릅니다</h1>
+
+<textarea id="input" rows="10" cols="60" placeholder="문서로 만들 글을 입력하세요"></textarea>
+<br />
+<button id="call-btn">부르기</button>
+
+<h2>결과</h2>
+<pre id="result"></pre>
+
+<script>
+const btn = document.getElementById("call-btn");
+const input = document.getElementById("input");
+const result = document.getElementById("result");
+
+btn.addEventListener("click", async () => {
+  const text = input.value;
+  result.textContent = "부르는 중";
+  btn.disabled = true;
+  try {
+    const res = await fetch("/call-agent", {
+      method: "POST",
+      headers: { "content-type": "text/plain; charset=utf-8" },
+      body: text,
+    });
+    const data = await res.text();
+    if (!res.ok) throw new Error(data || `오류 (${res.status})`);
+    result.textContent = data;
+  } catch (err) {
+    result.textContent = "오류: " + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
