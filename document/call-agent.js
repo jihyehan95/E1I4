@@ -23,9 +23,13 @@ function readRolePrompt() {
   return raw.replace(/^---[\s\S]*?---\s*/, "").trim();
 }
 
-async function callAgent(inputText) {
+async function callAgent(inputText, templateText) {
   const apiKey = readApiKey();
   const systemPrompt = readRolePrompt();
+
+  const userContent = templateText && templateText.trim()
+    ? `${inputText}\n\n---양식 문서---\n${templateText}`
+    : inputText;
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -38,7 +42,7 @@ async function callAgent(inputText) {
       model: MODEL,
       max_tokens: 4096,
       system: systemPrompt,
-      messages: [{ role: "user", content: inputText }],
+      messages: [{ role: "user", content: userContent }],
     }),
   });
 

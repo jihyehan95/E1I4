@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<title>FlowPilot AI Prototype</title>
+<style>
+    :root{
+      --bg:#f6f8fb;
+      --panel:#ffffff;
+      --line:#e4e8ef;
+      --text:#1f2937;
+      --muted:#6b7280;
+      --primary:#2563eb;
+      --primary-soft:#eaf1ff;
+      --green:#16a34a;
+      --green-soft:#ecfdf3;
+      --amber:#d97706;
+      --amber-soft:#fff7e8;
+      --rose:#e11d48;
+      --rose-soft:#fff1f4;
+      --violet:#7c3aed;
+      --violet-soft:#f5f0ff;
+      --shadow:0 10px 30px rgba(31,41,55,.08);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:Inter, Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color:var(--text);
+      background:var(--bg);
+    }
+    .app{
+      min-height:100vh;
+    }
+    aside{
+      background:#fff;
+      border-right:1px solid var(--line);
+      padding:24px 18px;
+      position:sticky;
+      top:0;
+      height:100vh;
+    }
+    .brand{
+      font-size:22px;
+      font-weight:800;
+      margin-bottom:28px;
+    }
+    .brand span{color:var(--primary)}
+    nav a{
+      display:block;
+      padding:12px 14px;
+      margin-bottom:8px;
+      color:#475569;
+      text-decoration:none;
+      border-radius:10px;
+      font-weight:600;
+    }
+    nav a.active{
+      background:var(--primary);
+      color:#fff;
+    }
+    main{
+      padding:34px 34px 60px;
+      max-width:1280px;
+      width:100%;
+      margin:0 auto;
+    }
+    .hero{
+      background:linear-gradient(135deg,#111827,#1f2937);
+      color:#fff;
+      border-radius:22px;
+      padding:30px 32px;
+      box-shadow:var(--shadow);
+      margin-bottom:24px;
+    }
+    .hero h1{margin:0 0 10px;font-size:30px}
+    .hero p{margin:0;color:#d1d5db;line-height:1.6}
+    .steps{
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+      margin-top:20px;
+    }
+    .step{
+      background:rgba(255,255,255,.08);
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:999px;
+      padding:9px 14px;
+      font-size:14px;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(12,1fr);
+      gap:18px;
+    }
+    .card{
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:18px;
+      box-shadow:var(--shadow);
+      padding:22px;
+    }
+    .card h2,.card h3{margin-top:0}
+    .input-card{grid-column:span 5}
+    .agent-card{grid-column:span 7}
+    .results-card{grid-column:span 12}
+    .field-grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:12px;
+    }
+    label{
+      font-size:13px;
+      color:#475569;
+      font-weight:700;
+      display:block;
+      margin-bottom:6px;
+    }
+    input, textarea, select{
+      width:100%;
+      padding:11px 12px;
+      border:1px solid #d8dee8;
+      border-radius:10px;
+      background:#fff;
+      font:inherit;
+    }
+    textarea{min-height:94px;resize:vertical}
+    .full{grid-column:1/-1}
+    .btn{
+      border:0;
+      background:var(--primary);
+      color:#fff;
+      font-weight:800;
+      padding:12px 16px;
+      border-radius:10px;
+      cursor:pointer;
+      margin-top:14px;
+    }
+    .btn.secondary{
+      background:#eef2f7;
+      color:#334155;
+      margin-left:8px;
+    }
+    .agent-list{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:12px;
+    }
+    .agent{
+      border-radius:14px;
+      padding:16px;
+      border:1px solid var(--line);
+      display:grid;
+      grid-template-columns:42px 1fr auto;
+      align-items:center;
+      gap:12px;
+    }
+    .agent .icon{
+      width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:20px;
+    }
+    .agent strong{display:block;margin-bottom:4px}
+    .agent small{color:var(--muted);line-height:1.4}
+    .status{
+      font-size:12px;
+      padding:6px 9px;
+      border-radius:999px;
+      font-weight:700;
+      background:#eef2f7;
+      color:#64748b;
+    }
+    .agent.planner .icon{background:var(--primary-soft)}
+    .agent.place .icon{background:var(--green-soft)}
+    .agent.schedule .icon{background:var(--amber-soft)}
+    .agent.cost .icon{background:var(--rose-soft)}
+    .agent.document .icon{background:var(--violet-soft)}
+    .agent.done .status{background:#dcfce7;color:#15803d}
+    .agent.running .status{background:#dbeafe;color:#1d4ed8}
+    .results{
+      display:grid;
+      grid-template-columns:1.2fr 1fr 1fr;
+      gap:16px;
+      margin-top:12px;
+    }
+    .result-panel{
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:16px;
+      min-height:250px;
+      background:#fbfcfe;
+    }
+    .timeline-item{
+      display:grid;
+      grid-template-columns:72px 1fr;
+      gap:10px;
+      padding:10px 0;
+      border-bottom:1px dashed #dbe0e8;
+    }
+    .timeline-item:last-child{border-bottom:0}
+    .time{font-weight:800;color:#334155}
+    .place{
+      padding:10px 0;
+      border-bottom:1px solid #edf0f4;
+    }
+    .place:last-child{border-bottom:0}
+    .place .meta{font-size:12px;color:var(--muted);margin-top:3px}
+    .budget-row{
+      display:flex;justify-content:space-between;
+      padding:9px 0;border-bottom:1px solid #edf0f4;
+    }
+    .budget-total{
+      font-weight:900;
+      font-size:18px;
+      padding-top:12px;
+      display:flex;
+      justify-content:space-between;
+    }
+    .doc-output{
+      margin-top:16px;
+      background:#fff;
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:20px;
+      line-height:1.7;
+    }
+    .doc-output h3{margin-bottom:8px}
+    .muted{color:var(--muted)}
+    .pill{
+      display:inline-block;
+      background:#eef2ff;
+      color:#4338ca;
+      padding:5px 8px;
+      border-radius:999px;
+      font-size:12px;
+      font-weight:700;
+      margin-right:6px;
+    }
+
+    .evolution-card{grid-column:span 12}
+    .evolution-wrap{
+      display:grid;
+      grid-template-columns:repeat(5,1fr);
+      gap:12px;
+      align-items:center;
+      margin-top:14px;
+    }
+    .evo-stage{
+      position:relative;
+      border:1px solid var(--line);
+      background:#fff;
+      border-radius:16px;
+      padding:18px 12px 15px;
+      min-height:190px;
+      text-align:center;
+      box-shadow:0 6px 18px rgba(31,41,55,.05);
+      transition:.25s ease;
+    }
+    .evo-stage:not(:last-child)::after{
+      content:"→";
+      position:absolute;
+      right:-18px;
+      top:50%;
+      transform:translateY(-50%);
+      font-size:24px;
+      font-weight:900;
+      color:#94a3b8;
+      z-index:3;
+    }
+    .evo-stage .poke{
+      width:84px;
+      height:84px;
+      border-radius:50%;
+      margin:0 auto 10px;
+      display:grid;
+      place-items:center;
+      font-size:42px;
+      background:#f8fafc;
+      border:2px solid #e5e7eb;
+    }
+    .evo-stage strong{
+      display:block;
+      font-size:15px;
+      margin-bottom:4px;
+    }
+    .evo-stage small{
+      display:block;
+      color:var(--muted);
+      line-height:1.4;
+      min-height:38px;
+    }
+    .evo-stage .status{
+      display:inline-block;
+      margin-top:10px;
+    }
+    .evo-stage.running{
+      border-color:#facc15;
+      background:#fffbea;
+      transform:translateY(-3px);
+    }
+    .evo-stage.running .poke{
+      background:#fef3c7;
+      border-color:#facc15;
+      animation:pulse 1s infinite;
+    }
+    .evo-stage.done{
+      border-color:#86efac;
+      background:#f0fdf4;
+    }
+    .evo-stage.done .status{
+      background:#dcfce7;
+      color:#15803d;
+    }
+    @keyframes pulse{
+      0%,100%{transform:scale(1)}
+      50%{transform:scale(1.06)}
+    }
+
+    @media(max-width:1000px){
+      .input-card,.agent-card,.results-card,.evolution-card{grid-column:span 12}
+      .results{grid-template-columns:1fr}
+      .evolution-wrap{grid-template-columns:1fr}
+      .evo-stage:not(:last-child)::after{
+        content:"↓";
+        right:auto;
+        top:auto;
+        bottom:-23px;
+        left:50%;
+        transform:translateX(-50%);
+      }
+    }
+
+    .evolution-card{
+      background:linear-gradient(180deg,#fff 0%,#fffdf8 100%);
+      overflow:hidden;
+    }
+    .evolution-card h2{margin-bottom:6px}
+    .evo-stage{
+      border:1px solid #ebe7df;
+      background:#fffefa;
+    }
+    .evo-stage:nth-child(1) .poke{background:#fff7d6}
+    .evo-stage:nth-child(2) .poke{background:#fff0f3}
+    .evo-stage:nth-child(3) .poke{background:#eef9ed}
+    .evo-stage:nth-child(4) .poke{background:#fff2df}
+    .evo-stage:nth-child(5) .poke{background:#f2edff}
+    .evo-stage .poke{
+      border:0;
+      box-shadow:inset 0 0 0 1px rgba(15,23,42,.05);
+      font-size:38px;
+    }
+    .evo-stage strong{font-size:17px}
+    .evo-stage small{font-size:12px}
+    .evo-stage:not(:last-child)::after{
+      color:#c4b9aa;
+      font-size:21px;
+    }
+    .evo-stage.running{
+      border-color:#93c5fd;
+      background:#f8fbff;
+    }
+    .evo-stage.running .poke{
+      background:#dbeafe;
+      border-color:transparent;
+    }
+
+    .office-stage{
+      padding-top:20px;
+      background:linear-gradient(180deg,#ffffff 0%,#fbfcff 100%);
+    }
+    .office-avatar{
+      width:88px !important;
+      height:88px !important;
+      font-size:48px !important;
+      background:linear-gradient(180deg,#f8fafc 0%,#eef2f7 100%) !important;
+      box-shadow:
+        inset 0 0 0 1px rgba(15,23,42,.05),
+        0 7px 16px rgba(15,23,42,.08) !important;
+      border-radius:24px !important;
+      margin-bottom:8px !important;
+    }
+    .team-badge{
+      display:inline-block;
+      font-size:11px;
+      line-height:1;
+      font-weight:800;
+      color:#64748b;
+      background:#f1f5f9;
+      padding:6px 8px;
+      border-radius:999px;
+      margin:0 auto 8px;
+    }
+    .office-stage strong{
+      font-size:17px;
+      color:#1f2937;
+    }
+    .office-stage small{
+      padding:0 4px;
+      min-height:44px;
+    }
+    .office-stage:nth-child(1) .office-avatar{background:#eef5ff !important}
+    .office-stage:nth-child(2) .office-avatar{background:#eefbf3 !important}
+    .office-stage:nth-child(3) .office-avatar{background:#fff8e9 !important}
+    .office-stage:nth-child(4) .office-avatar{background:#fff1f3 !important}
+    .office-stage:nth-child(5) .office-avatar{background:#f5f0ff !important}
+
+    .office-stage.running{
+      border-color:#60a5fa !important;
+      background:#f8fbff !important;
+      box-shadow:0 10px 26px rgba(59,130,246,.12);
+    }
+    .office-stage.running .office-avatar{
+      outline:3px solid rgba(96,165,250,.22);
+      animation:officePulse .9s infinite;
+    }
+    .office-stage.done{
+      border-color:#86efac !important;
+      background:#f7fff9 !important;
+    }
+    @keyframes officePulse{
+      0%,100%{transform:translateY(0)}
+      50%{transform:translateY(-4px)}
+    }
+
+    .report-preview{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:24px;
+      margin-top:18px;
+      align-items:start;
+    }
+    .report-page{
+      background:#fff;
+      color:#111;
+      border:1px solid #d8d8d8;
+      box-shadow:0 12px 30px rgba(15,23,42,.08);
+      padding:42px 44px 48px;
+      min-height:1120px;
+      font-family:"Noto Serif KR","Nanum Myeongjo","Batang",serif;
+      font-size:14px;
+      line-height:1.55;
+    }
+    .report-title{
+      border-top:2px solid #222;
+      border-bottom:2px solid #222;
+      text-align:center;
+      padding:12px 10px 10px;
+      font-size:20px;
+      line-height:1.35;
+      margin-bottom:22px;
+      letter-spacing:-.2px;
+    }
+    .report-title strong{
+      display:block;
+      font-size:23px;
+      margin-top:2px;
+    }
+    .report-author{
+      text-align:right;
+      margin-bottom:28px;
+      font-size:14px;
+    }
+    .report-page section{
+      margin:0 0 24px;
+    }
+    .report-page section h3{
+      margin:0 0 10px;
+      font-size:16px;
+      font-weight:800;
+    }
+    .report-page p{
+      margin:4px 0;
+    }
+    .report-page .indent{
+      padding-left:20px;
+    }
+    .subheading{
+      font-weight:700;
+      margin:8px 0 8px !important;
+    }
+    .note{
+      font-size:12px;
+      font-weight:400;
+    }
+    .report-table{
+      width:100%;
+      border-collapse:collapse;
+      table-layout:fixed;
+      font-size:12px;
+      line-height:1.35;
+      margin-top:8px;
+    }
+    .report-table th,
+    .report-table td{
+      border:1px solid #555;
+      padding:7px 6px;
+      vertical-align:middle;
+      word-break:keep-all;
+      overflow-wrap:anywhere;
+    }
+    .report-table th{
+      background:#f3f3f3;
+      text-align:center;
+      font-weight:800;
+    }
+    .report-table td:first-child,
+    .report-table td:nth-child(2){
+      text-align:center;
+    }
+    .schedule-table td{
+      vertical-align:top;
+    }
+    .budget-section{
+      margin-top:28px !important;
+      position:relative;
+    }
+    .unit{
+      text-align:right;
+      font-size:11px;
+      margin-bottom:4px;
+    }
+    .budget-table td:last-child{
+      text-align:right;
+      font-variant-numeric:tabular-nums;
+    }
+    .sum-row td{
+      font-weight:800;
+      text-align:center !important;
+      background:#fafafa;
+    }
+    .sum-row td:last-child{
+      text-align:right !important;
+    }
+    .footnote{
+      font-size:11px;
+      margin-top:7px !important;
+    }
+    @media(max-width:1100px){
+      .report-preview{grid-template-columns:1fr}
+      .report-page{min-height:auto}
+    }
+
+    .report-hidden{
+      display:none !important;
+    }
+    .report-ready{
+      display:grid !important;
+      animation:reportFadeIn .55s ease both;
+    }
+    @keyframes reportFadeIn{
+      from{opacity:0; transform:translateY(12px)}
+      to{opacity:1; transform:translateY(0)}
+    }
+    .run-message{
+      margin-top:16px;
+      padding:14px 16px;
+      border-radius:12px;
+      background:#f8fafc;
+      border:1px solid var(--line);
+      color:#64748b;
+      font-weight:700;
+    }
+
+    .report-placeholder{
+      background:#fff;
+      border:1px dashed #cbd5e1;
+      border-radius:14px;
+      padding:28px;
+      text-align:center;
+      color:#64748b;
+      grid-column:1/-1;
+    }
+
+    /* 실제 에이전트 상태 배지 (경고/조정필요/요청/반려) */
+    .office-stage.warn{border-color:#facc15 !important;background:#fffbeb !important}
+    .office-stage.warn .status{background:#fef9c3;color:#a16207}
+    .office-stage.request{border-color:#93c5fd !important;background:#f8fbff !important}
+    .office-stage.request .status{background:#dbeafe;color:#1d4ed8}
+    .office-stage.reject{border-color:#fca5a5 !important;background:#fff5f5 !important}
+    .office-stage.reject .status{background:#fee2e2;color:#b91c1c}
+    .run-message.warn{background:#fffbeb;border-color:#fde68a;color:#a16207}
+    .run-message.reject{background:#fff5f5;border-color:#fecaca;color:#b91c1c}
+</style>
+</head>
+<body>
+<div class="app">
+<main>
+<section class="hero">
+<h1>FlowPilot AI · 범용 현장업무 운영 Agent</h1>
+<p>업무 하나만 입력하면 5개 Agent가 순서대로 협업해 장소·경로·일정·경비·문서를 한 번에 완성합니다.</p>
+<div class="steps">
+<div class="step">① 요청 구조화</div>
+<div class="step">② 장소/경로 계산</div>
+<div class="step">③ 일정 생성</div>
+<div class="step">④ 경비 검토</div>
+<div class="step">⑤ 최종 문서 작성</div>
+</div>
+</section>
+<section class="grid">
+<div class="card input-card">
+<h2>업무 Input</h2>
+<div class="field-grid">
+<div>
+<label>업무 유형</label>
+<select id="taskType">
+<option>현장 방문 출장</option>
+<option>고객 방문</option>
+<option>프랜차이즈 점검</option>
+<option>사회복지 현장 방문</option>
+</select>
+</div>
+<div>
+<label>지역</label>
+<input id="region" value="제주"/>
+</div>
+<div>
+<label>시작일</label>
+<input id="startDate" type="date" value="2026-05-14"/>
+</div>
+<div>
+<label>종료일</label>
+<input id="endDate" type="date" value="2026-05-15"/>
+</div>
+<div>
+<label>인원</label>
+<input id="people" type="number" value="8"/>
+</div>
+<div>
+<label>예산</label>
+<input id="budget" type="number" value="1900000"/>
+</div><div><label>기관/프로젝트명</label><input id="projectName" value="현장업무 운영 프로젝트"/></div><div><label>작성자</label><input id="author" value="주OO"/></div>
+<div class="full">
+<label>목적</label>
+<textarea id="purpose">제주 소재 지원사업 대상 시설 현장심사 및 견적 산출</textarea>
+</div>
+<div class="full">
+<label>방문 대상</label>
+<textarea id="visits">행원육상양식단지협의회 - 제주 구좌읍 해맞이해안로 680-7
+신산리 어촌계 중부탈의장 - 제주 성산읍 환해장성로 84
+위미2리 어촌계 - 제주 남원읍 위미리 791-1
+상모 어촌계 - 제주 대정읍 형제해안로 313
+귀덕1리 어촌계 - 제주 한림읍 귀덕9길 8</textarea>
+</div>
+<div class="full">
+<label>숙소/추가 조건</label>
+<textarea id="conditions">숙소: 제주 애월읍 애월해안로 400-9
+점심: 12:00~14:00
+방문 순서는 이동시간 최소화
+점심 장소 추천
+일정표/예산표/최종 계획서 생성</textarea>
+</div>
+</div>
+<button class="btn" onclick="runPrototype()">AI 업무 계획 생성</button>
+<button class="btn secondary" onclick="resetPrototype()">초기화</button>
+</div>
+<div class="card evolution-card"><h2>AI 오피스 팀이 업무를 처리하고 있어요</h2><p class="muted">각 담당 직원 Agent가 자기 업무를 끝내고 다음 담당자에게 결과를 넘기는 사무실 협업 방식입니다.</p><div class="evolution-wrap"><div class="evo-stage office-stage" id="a1"><div class="poke office-avatar">👩🏻‍💼</div><span class="team-badge">기획팀</span><strong>기획 담당</strong><small>Planner Agent · 요청을 읽고 업무 조건을 정리해요</small><span class="status">대기</span></div><div class="evo-stage office-stage" id="a2"><div class="poke office-avatar">👨🏻‍💻</div><span class="team-badge">리서치팀</span><strong>리서치 담당</strong><small>Place Agent · 조건에 맞는 장소와 정보를 찾아요</small><span class="status">대기</span></div><div class="evo-stage office-stage" id="a3"><div class="poke office-avatar">👩🏻‍💻</div><span class="team-badge">운영팀</span><strong>일정 담당</strong><small>Schedule Agent · 이동 경로와 일정을 설계해요</small><span class="status">대기</span></div><div class="evo-stage office-stage" id="a4"><div class="poke office-avatar">👨🏻‍💼</div><span class="team-badge">재무팀</span><strong>경비 담당</strong><small>Cost Agent · 예산과 경비를 꼼꼼하게 검토해요</small><span class="status">대기</span></div><div class="evo-stage office-stage" id="a5"><div class="poke office-avatar">👩🏻‍🏫</div><span class="team-badge">문서팀</span><strong>문서 담당</strong><small>Document Agent · 결과를 최종 문서로 정리해요</small><span class="status">대기</span></div></div></div>
+<div class="card results-card"><h2>최종 결과 Preview</h2><p class="muted">Document Agent가 앞선 Agent 결과를 모아 실제 업무용 출장/현장심사 계획서 형태로 완성합니다.</p><div class="run-message" id="runMessage">아직 실행 전이에요. ‘AI 업무 계획 생성’을 누르면 5개 Agent가 순서대로 작업합니다.</div><div class="report-preview report-hidden" id="reportPreview"></div></div>
+</section>
+</main>
+</div>
+<!-- 에이전트 파이프라인 결과 주입 (orchestrator가 생성). 없으면 아래 스크립트가 기존 데모 로직으로 폴백 -->
+<script src="flowpilot-data.js"></script>
+<script>
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+function setStatus(id, text, mode = "") {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove("done", "running", "warn", "request", "reject");
+  if (mode) el.classList.add(mode);
+  const status = el.querySelector(".status");
+  if (status) status.textContent = text;
+}
+
+// 정규화 state -> 화면 배지(클래스 + 문구). 데이터가 없으면 '아직 실행 안 됨'으로 표시
+function stageBadge(stage) {
+  if (!stage || !stage.state) return { mode: "", label: "대기" };
+  switch (stage.state) {
+    case "ok":      return { mode: "done",    label: "완료" };
+    case "warn":    return { mode: "warn",    label: stage.label || "경고" };
+    case "adjust":  return { mode: "warn",    label: stage.label || "조정필요" };
+    case "request": return { mode: "request", label: stage.label || "요청" };
+    default:        return { mode: "reject",  label: stage.label || "반려" };
+  }
+}
+
+function stageName(key) {
+  return ({ plan: "기획", route: "리서치/경로", schedule: "일정", budget: "경비", document: "문서" })[key] || key;
+}
+
+function esc(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function formatDate(value) {
+  if (!value) return "미정";
+  const d = new Date(value + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return value;
+  const weekdays = ["일","월","화","수","목","금","토"];
+  return `${d.getFullYear()}. ${d.getMonth()+1}. ${d.getDate()}.(${weekdays[d.getDay()]})`;
+}
+
+function parseVisits(text) {
+  return text.split("\n")
+    .map(v => v.trim())
+    .filter(Boolean)
+    .map((line, idx) => {
+      let name = line;
+      let address = "";
+      if (line.includes(" - ")) {
+        const parts = line.split(" - ");
+        name = parts.shift().trim();
+        address = parts.join(" - ").trim();
+      }
+      return {
+        no: idx + 1,
+        type: "현장",
+        name,
+        address: address || "주소 미입력",
+        work: "현장 확인 및 업무 수행"
+      };
+    });
+}
+
+function parseConditions(text) {
+  const result = { hotel: "", lunch: "", extra: [] };
+  text.split("\n").map(x => x.trim()).filter(Boolean).forEach(line => {
+    const lower = line.toLowerCase();
+    if (line.startsWith("숙소:")) result.hotel = line.replace(/^숙소:\s*/, "");
+    else if (line.startsWith("점심:")) result.lunch = line.replace(/^점심:\s*/, "");
+    else result.extra.push(line);
+  });
+  return result;
+}
+
+function buildSchedule(visits, startDate, endDate, conditions) {
+  const rows = [];
+  if (!visits.length) {
+    rows.push({
+      date: formatDate(startDate),
+      time: "09:00-10:00",
+      content: "업무 시작 및 현장 이동",
+      note: conditions.hotel ? `숙소: ${conditions.hotel}` : ""
+    });
+    return rows;
+  }
+
+  let hour = 9;
+  let minute = 0;
+  visits.forEach((v, i) => {
+    const startH = String(hour).padStart(2, "0");
+    const startM = String(minute).padStart(2, "0");
+
+    minute += 40;
+    if (minute >= 60) { hour += Math.floor(minute / 60); minute %= 60; }
+
+    const endH = String(hour).padStart(2, "0");
+    const endM = String(minute).padStart(2, "0");
+
+    rows.push({
+      date: i === 0 ? formatDate(startDate) : "",
+      time: `${startH}:${startM}-${endH}:${endM}`,
+      content: `- 현장 업무(${v.name})`,
+      note: v.address
+    });
+
+    if (i < visits.length - 1) {
+      const moveStartH = String(hour).padStart(2, "0");
+      const moveStartM = String(minute).padStart(2, "0");
+      minute += 30;
+      if (minute >= 60) { hour += Math.floor(minute / 60); minute %= 60; }
+      const moveEndH = String(hour).padStart(2, "0");
+      const moveEndM = String(minute).padStart(2, "0");
+
+      rows.push({
+        date: "",
+        time: `${moveStartH}:${moveStartM}-${moveEndH}:${moveEndM}`,
+        content: `- ${v.name} → ${visits[i+1].name} 이동`,
+        note: "※ 실제 구현 시 지도 API 이동시간 반영"
+      });
+    }
+  });
+
+  if (conditions.lunch) {
+    rows.push({
+      date: "",
+      time: conditions.lunch,
+      content: "- 점심식사",
+      note: "Place Agent 추천 장소"
+    });
+  }
+  return rows;
+}
+
+function buildBudgetRows(totalBudget) {
+  const total = Math.max(0, Number(totalBudget) || 0);
+
+  // Prototype-only breakdown: uses fixed percentages solely to show a reference-style table.
+  const ratios = [
+    ["숙박비", 0.25],
+    ["장거리 교통비", 0.25],
+    ["현지 교통비", 0.10],
+    ["식사비", 0.25],
+    ["기타/다과비", 0.15]
+  ];
+
+  let used = 0;
+  return ratios.map((item, idx) => {
+    let amount;
+    if (idx === ratios.length - 1) amount = total - used;
+    else {
+      amount = Math.round(total * item[1] / 1000) * 1000;
+      used += amount;
+    }
+    return { name: item[0], amount };
+  });
+}
+
+// flowpilot-data.js(에이전트 결과)를 계획서 형태로 렌더
+function buildReportFromData(d) {
+  const report = document.getElementById("reportPreview");
+  if (!report) return;
+
+  const plan = d.plan || {}, route = d.route || {}, sch = d.schedule || {}, bud = d.budget || {}, doc = d.document || {};
+  const period = plan.period || {};
+
+  // schedule 행에서 장소별 '해야 할 일'을 뽑아 대상지 표의 주요업무에 재사용
+  const workByPlace = {};
+  (sch.rows || []).forEach(r => { if (r.place) workByPlace[r.place] = r.work; });
+
+  const allVisits = route.visits || [];
+  const activeVisits = allVisits.filter(v => !v.excluded);
+
+  const visitRows = allVisits.length ? allVisits.map(v => `
+    <tr${v.excluded ? ' style="color:#b91c1c"' : ''}>
+      <td>${v.no}</td>
+      <td>${esc(v.type)}</td>
+      <td>${esc(v.name)}</td>
+      <td>${esc(v.address)}</td>
+      <td>${esc(v.excluded ? ('제외 — ' + (v.excludeReason || '')) : (workByPlace[v.name] || '현장 확인 및 업무 수행'))}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="5">방문 대상이 없습니다.</td></tr>`;
+
+  const scheduleHtml = (sch.rows || []).map(r => {
+    const warn = r.state === "warn" || r.state === "adjust";
+    return `
+    <tr${warn ? ' style="background:#fffbeb"' : ''}>
+      <td>${esc(r.date)}</td>
+      <td>${esc(r.time)}</td>
+      <td>- 현장 업무(${esc(r.place)})<br><span class="note">${esc(r.work || '')}</span></td>
+      <td>${esc(r.move || '')}${warn ? ' <strong style="color:#a16207">⚠ ' + esc(r.state === "adjust" ? "조정필요" : "경고") + '</strong>' : ''}</td>
+    </tr>`;
+  }).join("");
+
+  const budRows = bud.rows || [];
+  const budgetHtml = budRows.map((r, i) => `
+    <tr>
+      ${i === 0 ? `<td rowspan="${budRows.length}">${esc(plan.taskType || '현장 방문')}</td>` : ""}
+      ${i === 0 ? `<td rowspan="${budRows.length}">운영비</td>` : ""}
+      <td>${esc(r.name)} <span class="note">${esc(r.formula || '')}</span></td>
+      <td>${(r.amount || 0).toLocaleString()}</td>
+    </tr>
+  `).join("");
+
+  const total = bud.total || 0;
+  const limit = bud.budgetLimit || plan.budgetLimit || total;
+  const excludedCount = allVisits.length - activeVisits.length;
+
+  report.innerHTML = `
+    <div class="report-page">
+      <div class="report-title">
+        <div>${esc(plan.projectName || '현장업무 운영 프로젝트')}</div>
+        <strong>${esc(doc.title || ((plan.region || '') + ' ' + (plan.taskType || '') + ' 계획'))}</strong>
+      </div>
+      <div class="report-author">작성자: ${esc(doc.author || plan.author || '미정')}</div>
+
+      <section>
+        <h3>1. 출장개요</h3>
+        <p>가. 목적: ${esc(plan.purpose || '')}</p>
+        <p>나. 일정: ${esc(formatDate(period.start))} ~ ${esc(formatDate(period.end))}</p>
+        <p>다. 지역: ${esc(plan.region || '')}</p>
+        <p>라. 인원: 총 ${(plan.peopleTotal || 0).toLocaleString()}명</p>
+        ${(plan.personnel && plan.personnel.length) ? `<p class="indent note">${plan.personnel.map(p => esc(p.org + ' ' + p.count + '명')).join(', ')}</p>` : ''}
+        ${doc.hotel ? `<p>마. 숙소: ${esc(doc.hotel)}</p>` : ''}
+      </section>
+
+      <section>
+        <h3>2. 대상 현황: 총 ${activeVisits.length}건${excludedCount > 0 ? ` <span class="note">(주소 미정 등 제외 ${excludedCount}건)</span>` : ''}</h3>
+        <p>${activeVisits.map(v => esc(v.name)).join(', ') || '방문 대상 미입력'}</p>
+      </section>
+
+      <section>
+        <h3>3. ${esc(plan.region || '')} 현장업무(안)</h3>
+        <p class="subheading">가. 대상지 정보(${allVisits.length}개소)</p>
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th style="width:7%">연번</th>
+              <th style="width:10%">구분</th>
+              <th style="width:22%">대상지명</th>
+              <th style="width:25%">소재지</th>
+              <th>주요업무</th>
+            </tr>
+          </thead>
+          <tbody>${visitRows}</tbody>
+        </table>
+      </section>
+    </div>
+
+    <div class="report-page">
+      <section>
+        <p class="subheading">나. 상세일정(안)${(sch.label && sch.label !== '정상') ? ` <span class="note" style="color:#a16207">· 일정 상태: ${esc(sch.label)}</span>` : ''}</p>
+        <table class="report-table schedule-table">
+          <thead>
+            <tr>
+              <th style="width:16%">일자</th>
+              <th style="width:16%">시간</th>
+              <th>주요내용</th>
+              <th style="width:26%">비고</th>
+            </tr>
+          </thead>
+          <tbody>${scheduleHtml}</tbody>
+        </table>
+      </section>
+
+      <section class="budget-section">
+        <h3>4. 예산: 금${limit.toLocaleString()}원</h3>
+        <div class="unit">(단위: 원)</div>
+        <table class="report-table budget-table">
+          <thead>
+            <tr>
+              <th style="width:15%">세목</th>
+              <th style="width:18%">세세목</th>
+              <th>세부내역</th>
+              <th style="width:16%">금액</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${budgetHtml}
+            <tr class="sum-row">
+              <td colspan="3">합계</td>
+              <td>${total.toLocaleString()}</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="footnote">* 예산 대비 판정: <strong>${esc(bud.label || '')}</strong> — ${esc(bud.reason || '')}</p>
+        ${doc.note ? `<p class="footnote">* ${esc(doc.note)}</p>` : ''}
+      </section>
+    </div>
+  `;
+}
+
+function buildReport() {
+  // 에이전트 결과가 주입돼 있으면 그 값으로 렌더, 없으면 아래 데모(입력값 계산)로 폴백
+  if (window.FLOWPILOT_DATA) { return buildReportFromData(window.FLOWPILOT_DATA); }
+
+  const taskType = document.getElementById("taskType")?.value || "현장 방문";
+  const region = document.getElementById("region")?.value || "미정";
+  const startDate = document.getElementById("startDate")?.value || "";
+  const endDate = document.getElementById("endDate")?.value || "";
+  const people = Number(document.getElementById("people")?.value || 0);
+  const budget = Number(document.getElementById("budget")?.value || 0);
+  const purpose = document.getElementById("purpose")?.value || "업무 목적 미입력";
+  const visitsText = document.getElementById("visits")?.value || "";
+  const conditionsText = document.getElementById("conditions")?.value || "";
+  const author = document.getElementById("author")?.value || "미정";
+  const projectName = document.getElementById("projectName")?.value || "현장업무 운영 프로젝트";
+
+  const visits = parseVisits(visitsText);
+  const conditions = parseConditions(conditionsText);
+  const scheduleRows = buildSchedule(visits, startDate, endDate, conditions);
+  const budgetRows = buildBudgetRows(budget);
+
+  const report = document.getElementById("reportPreview");
+  if (!report) return;
+
+  const visitRows = visits.length ? visits.map(v => `
+    <tr>
+      <td>${v.no}</td>
+      <td>${esc(v.type)}</td>
+      <td>${esc(v.name)}</td>
+      <td>${esc(v.address)}</td>
+      <td>${esc(v.work)}</td>
+    </tr>
+  `).join("") : `
+    <tr><td colspan="5">방문 대상이 입력되지 않았습니다.</td></tr>
+  `;
+
+  const scheduleHtml = scheduleRows.map(r => `
+    <tr>
+      <td>${esc(r.date)}</td>
+      <td>${esc(r.time)}</td>
+      <td>${esc(r.content).replaceAll("\n","<br>")}</td>
+      <td>${esc(r.note)}</td>
+    </tr>
+  `).join("");
+
+  const budgetHtml = budgetRows.map((r, i) => `
+    <tr>
+      ${i === 0 ? `<td rowspan="${budgetRows.length}">${esc(taskType)}</td>` : ""}
+      ${i === 0 ? `<td rowspan="${budgetRows.length}">운영비</td>` : ""}
+      <td>${esc(r.name)} (프로토타입 배분)</td>
+      <td>${r.amount.toLocaleString()}</td>
+    </tr>
+  `).join("");
+
+  report.innerHTML = `
+    <div class="report-page">
+      <div class="report-title">
+        <div>${esc(projectName)}</div>
+        <strong>${esc(region)} ${esc(taskType)} 계획</strong>
+      </div>
+      <div class="report-author">작성자: ${esc(author)}</div>
+
+      <section>
+        <h3>1. 출장개요</h3>
+        <p>가. 목적: ${esc(purpose)}</p>
+        <p>나. 일정: ${esc(formatDate(startDate))} ~ ${esc(formatDate(endDate))}</p>
+        <p>다. 지역: ${esc(region)}</p>
+        <p>라. 인원: 총 ${people.toLocaleString()}명</p>
+        ${conditions.hotel ? `<p>마. 숙소: ${esc(conditions.hotel)}</p>` : ""}
+      </section>
+
+      <section>
+        <h3>2. 대상 현황: 총 ${visits.length}건</h3>
+        <p>${visits.length ? visits.map(v => esc(v.name)).join(", ") : "방문 대상 미입력"}</p>
+      </section>
+
+      <section>
+        <h3>3. ${esc(region)} 현장업무(안) <span class="note">*프로토타입 자동 생성</span></h3>
+        <p class="subheading">가. 대상지 정보(${visits.length}개소)</p>
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th style="width:7%">연번</th>
+              <th style="width:10%">구분</th>
+              <th style="width:22%">대상지명</th>
+              <th style="width:25%">소재지</th>
+              <th>주요업무</th>
+            </tr>
+          </thead>
+          <tbody>${visitRows}</tbody>
+        </table>
+      </section>
+    </div>
+
+    <div class="report-page">
+      <section>
+        <p class="subheading">나. 상세일정(안)</p>
+        <table class="report-table schedule-table">
+          <thead>
+            <tr>
+              <th style="width:16%">일자</th>
+              <th style="width:16%">시간</th>
+              <th>주요내용</th>
+              <th style="width:26%">비고</th>
+            </tr>
+          </thead>
+          <tbody>${scheduleHtml}</tbody>
+        </table>
+      </section>
+
+      <section class="budget-section">
+        <h3>4. 예산: 금${budget.toLocaleString()}원</h3>
+        <div class="unit">(단위: 원)</div>
+        <table class="report-table budget-table">
+          <thead>
+            <tr>
+              <th style="width:15%">세목</th>
+              <th style="width:18%">세세목</th>
+              <th>세부내역</th>
+              <th style="width:16%">금액</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${budgetHtml}
+            <tr class="sum-row">
+              <td colspan="3">합계</td>
+              <td>${budget.toLocaleString()}</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="footnote">* 프로토타입에서는 총예산을 기준으로 항목별 예산을 예시 비율로 배분합니다. 실제 구현 시 사용자가 입력한 세부 경비 또는 회사 기준을 사용합니다.</p>
+
+        ${conditions.extra.length ? `
+          <p class="subheading" style="margin-top:24px !important;">추가 조건</p>
+          <ul>${conditions.extra.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
+        ` : ""}
+      </section>
+    </div>
+  `;
+}
+
+const ORCHESTRATOR_ENDPOINT = "http://localhost:8788/run";
+
+function readFormValues() {
+  return {
+    taskType: document.getElementById("taskType")?.value || "",
+    region: document.getElementById("region")?.value || "",
+    startDate: document.getElementById("startDate")?.value || "",
+    endDate: document.getElementById("endDate")?.value || "",
+    people: document.getElementById("people")?.value || "",
+    budget: document.getElementById("budget")?.value || "",
+    purpose: document.getElementById("purpose")?.value || "",
+    visits: document.getElementById("visits")?.value || "",
+    conditions: document.getElementById("conditions")?.value || "",
+    projectName: document.getElementById("projectName")?.value || "",
+    author: document.getElementById("author")?.value || "",
+  };
+}
+
+async function runPrototype() {
+  const button = document.querySelector('button[onclick="runPrototype()"]');
+  const report = document.getElementById("reportPreview");
+  const message = document.getElementById("runMessage");
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = "AI 팀이 업무 처리 중...";
+    button.style.opacity = "0.7";
+    button.style.cursor = "wait";
+  }
+
+  if (report) {
+    report.classList.add("report-hidden");
+    report.classList.remove("report-ready");
+  }
+
+  ["a1","a2","a3","a4","a5"].forEach(id => setStatus(id, "실행 중", "running"));
+  if (message) {
+    message.className = "run-message";
+    message.textContent = "orchestrator가 실제로 plan → route → schedule → budget → document를 순서대로 호출하고 있어요... (수십 초 걸릴 수 있어요)";
+  }
+
+  const steps = [["a1","plan"], ["a2","route"], ["a3","schedule"], ["a4","budget"], ["a5","document"]];
+  let result = null;
+  let callFailed = "";
+
+  try {
+    const res = await fetch(ORCHESTRATOR_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(readFormValues()),
+    });
+    const payload = await res.json();
+    if (!res.ok || payload.error) throw new Error(payload.error || `서버 오류 (${res.status})`);
+    result = payload; // { data, hardStopped }
+  } catch (err) {
+    callFailed = err.message;
+  }
+
+  if (result) {
+    const D = result.data;
+    const flagged = [];
+    for (const [id, key] of steps) {
+      const stage = D[key];
+      const badge = stageBadge(stage);
+      setStatus(id, badge.label, badge.mode);
+      if (stage && stage.state && stage.state !== "ok") flagged.push({ key, stage });
+    }
+
+    buildReportFromData(D);
+
+    if (message) {
+      if (result.hardStopped) {
+        const stoppedStage = D[result.hardStopped.stage] || {};
+        message.className = "run-message reject";
+        message.textContent = `⏸ ${stageName(result.hardStopped.stage)} 단계에서 진행 중단 — ${stoppedStage.label || result.hardStopped.state}: ${stoppedStage.reason || ""} · 사용자 확인/보완을 기다립니다. (이후 단계는 실행되지 않았습니다)`;
+      } else if (flagged.length) {
+        message.className = "run-message warn";
+        message.textContent = `⚠ 완료(확인 필요 ${flagged.length}건): ` +
+          flagged.map(f => `${stageName(f.key)} — ${f.stage.label}`).join(", ") +
+          ` · orchestrator가 실제로 5단계를 호출한 결과입니다.`;
+      } else {
+        message.className = "run-message";
+        message.textContent = "완료! orchestrator가 실제로 5단계(plan/route/schedule/budget/document)를 호출해 최종 계획서를 생성했습니다.";
+      }
+    }
+  } else {
+    // 서버 미실행 등으로 실제 호출에 실패 — 예시 데이터/입력값 기반 데모로 대체
+    ["a1","a2","a3","a4","a5"].forEach(id => setStatus(id, "대기"));
+    buildReport();
+    if (message) {
+      message.className = "run-message reject";
+      message.textContent = `담당자를 부르지 못했어요: ${callFailed} (터미널에서 node orchestrator/call-agent --serve 를 켰는지 확인해 주세요.) 지금 보이는 결과는 실제 호출이 아닌 예시/데모입니다.`;
+    }
+  }
+
+  if (report) {
+    report.classList.remove("report-hidden");
+    report.classList.add("report-ready");
+    report.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  if (button) {
+    button.disabled = false;
+    button.textContent = "다시 계획 생성";
+    button.style.opacity = "1";
+    button.style.cursor = "pointer";
+  }
+}
+
+function resetPrototype() {
+  ["a1","a2","a3","a4","a5"].forEach(id => setStatus(id, "대기"));
+  const report = document.getElementById("reportPreview");
+  const message = document.getElementById("runMessage");
+  const button = document.querySelector('button[onclick="runPrototype()"]');
+
+  if (report) {
+    report.innerHTML = "";
+    report.classList.add("report-hidden");
+    report.classList.remove("report-ready");
+  }
+  if (message) {
+    message.textContent = "아직 실행 전이에요. ‘AI 업무 계획 생성’을 누르면 5개 Agent가 순서대로 작업합니다.";
+  }
+  if (button) {
+    button.disabled = false;
+    button.textContent = "AI 업무 계획 생성";
+    button.style.opacity = "1";
+    button.style.cursor = "pointer";
+  }
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+</script>
+</body>
+</html>

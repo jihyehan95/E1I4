@@ -20,7 +20,8 @@ const server = http.createServer((req, res) => {
     req.on("data", (chunk) => { body += chunk; });
     req.on("end", async () => {
       try {
-        const result = await callAgent(body);
+        const { data, template } = JSON.parse(body || "{}");
+        const result = await callAgent(data || "", template || "");
         res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
         res.end(result);
       } catch (err) {
