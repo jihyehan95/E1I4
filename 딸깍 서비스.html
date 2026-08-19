@@ -842,9 +842,9 @@
 <div class="card evolution-card"><h2>AI 오피스 팀이 업무를 처리하고 있어요</h2><p class="muted">담당 Agent가 순서대로 업무를 이어받아 진화하듯 처리합니다. <b>담당을 클릭하면 그 Agent가 한 일이 아래에 펼쳐져요.</b></p>
 <div class="poke-road">
   <div class="road-line"></div>
-  <div class="poke-hud"><div class="tag" id="pokeStageTag">대기</div><div class="nm" id="pokeName">이상해씨</div></div>
+  <div class="poke-hud"><div class="tag" id="pokeStageTag">대기 중</div><div class="nm" id="pokeName">몬스터볼</div></div>
   <div class="actor-track" id="actorTrack"><div class="actor" id="actor"><img id="pokeImg" alt="담당 포켓몬"
-    src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/1.gif"
+    src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png"
     onerror="this.onerror=null;this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/1.png'"/></div></div>
   <div class="evolution-wrap"><div class="evo-stage office-stage" id="a1" onclick="openAgentDetail('plan')"><span class="team-badge">기획팀</span><strong>기획 담당</strong><small>Planner Agent · 요청을 읽고 업무 조건을 정리해요</small><span class="status">대기</span><span class="stage-hint">🔍 클릭해 상세 보기</span></div><div class="evo-stage office-stage" id="a2" onclick="openAgentDetail('route')"><span class="team-badge">리서치팀</span><strong>리서치 담당</strong><small>Place Agent · 조건에 맞는 장소와 정보를 찾아요</small><span class="status">대기</span><span class="stage-hint">🔍 클릭해 상세 보기</span></div><div class="evo-stage office-stage" id="a3" onclick="openAgentDetail('schedule')"><span class="team-badge">운영팀</span><strong>일정 담당</strong><small>Schedule Agent · 이동 경로와 일정을 설계해요</small><span class="status">대기</span><span class="stage-hint">🔍 클릭해 상세 보기</span></div><div class="evo-stage office-stage" id="a4" onclick="openAgentDetail('budget')"><span class="team-badge">재무팀</span><strong>경비 담당</strong><small>Cost Agent · 예산과 경비를 꼼꼼하게 검토해요</small><span class="status">대기</span><span class="stage-hint">🔍 클릭해 상세 보기</span></div><div class="evo-stage office-stage" id="a5" onclick="openAgentDetail('document')"><span class="team-badge">문서팀</span><strong>문서 담당</strong><small>Document Agent · 결과를 최종 문서로 정리해요</small><span class="status">대기</span><span class="stage-hint">🔍 클릭해 상세 보기</span></div></div>
 </div></div>
@@ -1399,34 +1399,66 @@ async function runPrototype() {
 
   if (typeof hideAgentDetail === "function") hideAgentDetail();
   if (typeof resetPokemon === "function") resetPokemon();
+  ["a1","a2","a3","a4","a5"].forEach(id => setStatus(id, "대기"));
 
   if (message) {
     message.className = "run-message";
-    message.textContent = "담당 Agent가 순서대로 업무를 처리하고 있어요... (실서버 연결 시 수십 초 걸릴 수 있어요)";
+    message.textContent = "담당 Agent가 순서대로 업무를 처리하고 있어요... (실서버 연결 시 단계별로 수십 초~수 분 걸릴 수 있어요)";
   }
 
   const steps = [["a1","plan"], ["a2","route"], ["a3","schedule"], ["a4","budget"], ["a5","document"]];
+  const idByStage = { plan:"a1", route:"a2", schedule:"a3", budget:"a4", document:"a5" };
+  const stepIndexByStage = { plan:0, route:1, schedule:2, budget:3, document:4 };
   let result = null;
   let callFailed = "";
 
-  // 실제 호출은 백그라운드로 보내고, 화면에서는 포켓몬이 걸어가며 진화하는 연출을 먼저 보여준다
-  const fetchPromise = (async () => {
-    try {
-      const res = await fetch(ORCHESTRATOR_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(readFormValues()),
-      });
-      const payload = await res.json();
-      if (!res.ok || payload.error) throw new Error(payload.error || `서버 오류 (${res.status})`);
-      result = payload; // { data, hardStopped }
-    } catch (err) {
-      callFailed = err.message;
-    }
-  })();
+  // 서버가 각 단계 시작/종료를 실시간으로 스트리밍해준다 — 그 신호를 그대로 받아서
+  // 포켓몬이 "지금 실제로 일하고 있는 담당" 위로, 그 단계가 시작되는 순간에 걸어가게 한다.
+  try {
+    const res = await fetch(ORCHESTRATOR_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(readFormValues()),
+    });
+    if (!res.ok) throw new Error(`서버 오류 (${res.status})`);
+    if (!res.body) throw new Error("이 브라우저는 스트리밍 응답을 지원하지 않습니다.");
 
-  if (typeof runPokemonSequence === "function") await runPokemonSequence(steps);
-  await fetchPromise;
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line) continue;
+        let event;
+        try { event = JSON.parse(line); } catch { continue; }
+
+        if (event.type === "stage_start") {
+          const id = idByStage[event.stage];
+          const i = stepIndexByStage[event.stage];
+          if (id) setStatus(id, "실행 중", "running");
+          if (i != null && typeof walkAndEvolveTo === "function") await walkAndEvolveTo(i);
+        } else if (event.type === "stage_done") {
+          const id = idByStage[event.stage];
+          if (id) {
+            const badge = stageBadge({ state: event.state });
+            setStatus(id, badge.label, badge.mode);
+          }
+        } else if (event.type === "result") {
+          result = event; // { type, data, hardStopped }
+        } else if (event.type === "error") {
+          callFailed = event.error;
+        }
+      }
+    }
+  } catch (err) {
+    callFailed = err.message;
+  }
 
   if (result) {
     const D = result.data;
@@ -1522,6 +1554,9 @@ const AGENT_META = {
   document: { team:"문서팀",   title:"문서 담당 · Document Agent", sub:"결과를 최종 문서로 정리했어요" },
 };
 
+// 아직 실행 전(대기) 상태 — 어느 담당 카드에도 배정되지 않은 채 출발선에 있는 몬스터볼
+const IDLE_STAGE = { tag:"대기 중", name:"몬스터볼", sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png", fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/1.png" };
+
 // 담당(체크포인트)별 진화 형태 — 사용자가 준 HTML의 이상해씨 계열 showdown gif 사용
 const POKE_STAGES = [
   { key:"plan",     tag:"기본 형태",  name:"이상해씨",     sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/1.gif",     fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/1.png" },
@@ -1530,7 +1565,7 @@ const POKE_STAGES = [
   { key:"budget",   tag:"메가 진화",  name:"메가이상해꽃", sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/10033.png", fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/3.png" },
   { key:"document", tag:"업무 완료",  name:"메가이상해꽃", sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/10033.png", fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/3.png" },
 ];
-let CURRENT_POKE_STEP = 0;
+let CURRENT_POKE_STEP = -1; // -1 = 몬스터볼(대기), 0~4 = plan~document 카드 위
 
 function pokeParts() {
   return {
@@ -1558,11 +1593,11 @@ function setPokeSprite(p, stage) {
 function resetPokemon() {
   const p = pokeParts();
   if (!p.track) return;
-  CURRENT_POKE_STEP = 0;
+  CURRENT_POKE_STEP = -1; // -1 = 아직 어느 담당에도 안 감(몬스터볼, 출발선)
   p.actor.className = "actor";
-  setPokeSprite(p, POKE_STAGES[0]);
+  setPokeSprite(p, IDLE_STAGE);
   p.track.style.transition = "none";
-  p.track.style.transform = `translateX(${pokeTargetX(0)}px)`;
+  p.track.style.transform = "translateX(0px)"; // 출발선(카드 밖) — 실행되기 전엔 어느 담당 위에도 있지 않음
   // 강제 리플로우 후 트랜지션 복구
   void p.track.offsetWidth;
   p.track.style.transition = "";
@@ -1584,17 +1619,6 @@ function walkAndEvolveTo(i) {
     }, travel);
   });
 }
-// 파이프라인 순서대로 걷기+진화 연출 (각 담당 상태 배지도 갱신)
-async function runPokemonSequence(steps) {
-  ["a1","a2","a3","a4","a5"].forEach(id => setStatus(id, "대기"));
-  for (let i = 0; i < steps.length; i++) {
-    const [id] = steps[i];
-    setStatus(id, "실행 중", "running");
-    await walkAndEvolveTo(i);
-    setStatus(id, "완료", "done"); // 최종 실제/샘플 상태는 runPrototype에서 다시 덮어씀
-  }
-}
-
 const AGENT_RENDER = {
   plan: (D) => {
     const p = D.plan || {}, per = p.period || {};

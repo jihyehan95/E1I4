@@ -8,6 +8,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const http = require("http");
 const Anthropic = require("@anthropic-ai/sdk");
 const { z } = require("zod");
@@ -20,6 +21,7 @@ const MODEL = "claude-sonnet-5";
 const ROOT = path.join(__dirname, "..");
 const ENV_PATH = path.join(ROOT, ".env");
 const AGENTS_DIR = path.join(ROOT, ".claude", "agents");
+const STAGE_CACHE_PATH = path.join(os.tmpdir(), "orchestrator-stage-cache.json");
 
 function readApiKeyFromEnvFile(envPath) {
   if (!fs.existsSync(envPath)) {
@@ -227,97 +229,120 @@ const STAGE_SHAPE_BUILDERS = {
     }),
 };
 
-async function aggregate(client, completedStages) {
-  const stageList = Object.keys(completedStages);
-  const shape = {};
-  for (const name of stageList) shape[name] = STAGE_SHAPE_BUILDERS[name]();
-  const FlowpilotDataZ = z.object(shape);
-
-  const body = stageList
-    .map((name) => `### ${name} (state: ${completedStages[name].state})\n\n${completedStages[name].text}`)
-    .join("\n\n---\n\n");
+// 단계 하나만 구조화한다. (5단계를 한 번에 큰 스키마로 요청하면 strict 구조화 출력의
+// grammar가 너무 커져 API가 400(grammar too large)을 내는 경우가 있어, 단계별로 나눠
+// 작고 확실한 스키마로 각각 구조화한다 — 호출 수는 늘지만 각 호출은 매우 작다.)
+async function aggregateStage(client, stageName, stageResult) {
+  const ShapeZ = STAGE_SHAPE_BUILDERS[stageName]();
 
   const system =
-    "너는 방금 실행된 출장 파이프라인 단계 결과들을 flowpilot-data.schema.md 규격의 JSON으로 구조화하는 담당이다. " +
-    "각 단계 결과 텍스트에 있는 값만 사용해라. 텍스트에 없는 값은 지어내지 말고, 알 수 없으면 빈 문자열이나 빈 배열로 둬라. " +
-    `아래에 있는 단계(${stageList.join(", ")})만 채우고, 없는 단계는 아예 비워둬라(그 단계 키 자체를 넣지 마라). ` +
-    "숫자 필드(peopleTotal, amount, total, budgetLimit 등)는 콤마를 뺀 순수 숫자로 넣어라.";
+    `너는 방금 실행된 출장 파이프라인의 "${stageName}" 단계 결과를 flowpilot-data.schema.md 규격의 JSON으로 구조화하는 담당이다. ` +
+    "텍스트에 있는 값만 사용해라. 텍스트에 없는 값은 지어내지 말고, 알 수 없으면 빈 문자열이나 빈 배열로 둬라. " +
+    "숫자 필드(peopleTotal, amount, total, budgetLimit 등)는 콤마를 뺀 순수 숫자로 넣어라. " +
+    "'(추정)'이라고 표시된 값은 그 표시를 값 문자열에 그대로 남겨서, 실측값과 구분되게 해라.";
+
+  const body = `### ${stageName} (state: ${stageResult.state})\n\n${stageResult.text}`;
 
   // client.beta.messages.create (parse 헬퍼 아님) + 직접 JSON.parse + zod 검증.
   // (설치된 SDK 버전의 .parse() 헬퍼가 신형 output_config.format을 못 알아보고
   //  항상 parsed_output: null을 돌려주는 버그가 있어 우회함 — API 자체는 정상 응답함)
   const response = await client.beta.messages.create({
     model: MODEL,
-    max_tokens: 16000,
+    max_tokens: 4000,
     system,
     messages: [{ role: "user", content: body }],
     // 단순 재구조화 작업이라 effort를 낮춘다 (기본 high는 과도하게 생각만 하다
     // 답을 못 내놓는 경우가 있었음)
-    output_config: { effort: "low", format: betaZodOutputFormat(FlowpilotDataZ) },
+    output_config: { effort: "low", format: betaZodOutputFormat(ShapeZ) },
   });
 
   const textBlock = response.content.find((b) => b.type === "text");
   if (!textBlock) {
-    throw new Error(`취합 단계 응답에 텍스트가 없습니다 (stop_reason: ${response.stop_reason}).`);
+    throw new Error(`"${stageName}" 취합 응답에 텍스트가 없습니다 (stop_reason: ${response.stop_reason}).`);
   }
 
   let parsedJson;
   try {
     parsedJson = JSON.parse(textBlock.text);
   } catch (e) {
-    throw new Error(`취합 단계 JSON 파싱 실패: ${e.message}`);
+    throw new Error(`"${stageName}" 취합 JSON 파싱 실패: ${e.message}`);
   }
 
-  const result = FlowpilotDataZ.safeParse(parsedJson);
+  const result = ShapeZ.safeParse(parsedJson);
   if (!result.success) {
-    throw new Error(`취합 단계 스키마 검증 실패: ${JSON.stringify(result.error.issues).slice(0, 500)}`);
+    const debugPath = path.join(os.tmpdir(), `orchestrator-aggregate-debug-${stageName}.json`);
+    try { fs.writeFileSync(debugPath, textBlock.text); } catch {}
+    throw new Error(
+      `"${stageName}" 취합 스키마 검증 실패: ${JSON.stringify(result.error.issues).slice(0, 500)} ` +
+      `(원본 응답 전체는 ${debugPath} 에 저장됨)`,
+    );
   }
   return result.data;
 }
 
+async function aggregate(client, completedStages) {
+  const data = {};
+  for (const name of Object.keys(completedStages)) {
+    data[name] = await aggregateStage(client, name, completedStages[name]);
+  }
+  return data;
+}
+
 // ---- 파이프라인 실행 ----
 
-async function runPipeline(form) {
+// onEvent({type:"stage_start"|"stage_done", stage, state?}) — 화면의 포켓몬 애니메이션이
+// 실제 에이전트 진행 속도에 맞춰 움직일 수 있도록, 각 단계 시작/종료 시점에 실시간으로 알린다.
+async function runPipeline(form, onEvent = () => {}) {
   const apiKey = readApiKeyFromEnvFile(ENV_PATH);
   const client = new Anthropic({ apiKey });
 
   const completed = {}; // { plan: {state,text}, route: {...}, ... }
   let hardStopped = null;
 
+  onEvent({ type: "stage_start", stage: "plan" });
   const planInput = buildPlanInput(form);
   completed.plan = await callStage(client, "plan", planInput);
+  onEvent({ type: "stage_done", stage: "plan", state: completed.plan.state });
   if (HARD_STOP_STATES.has(completed.plan.state)) {
     hardStopped = { stage: "plan", ...completed.plan };
   }
 
   if (!hardStopped) {
+    onEvent({ type: "stage_start", stage: "route" });
     const routeInput = buildRouteInput(completed.plan.text, form);
     completed.route = await callStage(client, "route", routeInput);
+    onEvent({ type: "stage_done", stage: "route", state: completed.route.state });
     if (HARD_STOP_STATES.has(completed.route.state)) hardStopped = { stage: "route", ...completed.route };
   }
 
   if (!hardStopped) {
+    onEvent({ type: "stage_start", stage: "schedule" });
     const scheduleInput = buildScheduleInput(completed.route.text, completed.plan.text);
     completed.schedule = await callStage(client, "schedule", scheduleInput);
+    onEvent({ type: "stage_done", stage: "schedule", state: completed.schedule.state });
     if (HARD_STOP_STATES.has(completed.schedule.state)) hardStopped = { stage: "schedule", ...completed.schedule };
   }
 
   if (!hardStopped) {
+    onEvent({ type: "stage_start", stage: "budget" });
     const budgetInput = buildBudgetInput(completed.schedule.text, completed.plan.text, form);
     completed.budget = await callStage(client, "budget", budgetInput);
+    onEvent({ type: "stage_done", stage: "budget", state: completed.budget.state });
     if (HARD_STOP_STATES.has(completed.budget.state)) hardStopped = { stage: "budget", ...completed.budget };
   }
 
   if (!hardStopped) {
+    onEvent({ type: "stage_start", stage: "document" });
     const documentInput = buildDocumentInput(completed.schedule.text, completed.budget.text, completed.plan.text);
     completed.document = await callStage(client, "document", documentInput);
+    onEvent({ type: "stage_done", stage: "document", state: completed.document.state });
     if (HARD_STOP_STATES.has(completed.document.state)) hardStopped = { stage: "document", ...completed.document };
   }
 
   // 디버깅용: 5단계 실행 결과를 캐시해서, 취합 단계만 다시 테스트할 수 있게 한다
-  // (node orchestrator/call-agent --aggregate-from /tmp/stage-cache.json)
+  // (node orchestrator/call-agent --aggregate-from <경로>)
   try {
-    fs.writeFileSync("/tmp/orchestrator-stage-cache.json", JSON.stringify(completed, null, 2));
+    fs.writeFileSync(STAGE_CACHE_PATH, JSON.stringify(completed, null, 2));
   } catch {}
 
   const data = await aggregate(client, completed);
@@ -479,21 +504,26 @@ function runServer(port) {
     req.setEncoding("utf8");
     req.on("data", (chunk) => (body += chunk));
     req.on("end", async () => {
+      // NDJSON(줄바꿈으로 구분된 JSON) 스트림 — 화면이 각 단계 시작/종료를 실시간으로
+      // 받아서, 포켓몬 애니메이션이 실제 에이전트가 일하는 카드 위에서 실제 속도로 움직이게 한다.
+      res.writeHead(200, { "Content-Type": "application/x-ndjson" });
       try {
         const form = JSON.parse(body);
         console.log(`[orchestrator] 실행 시작: ${form.region || ""} / ${form.taskType || ""}`);
-        const result = await runPipeline(form);
+        const result = await runPipeline(form, (event) => {
+          res.write(JSON.stringify(event) + "\n");
+        });
         console.log(
           result.hardStopped
             ? `[orchestrator] ${result.hardStopped.stage} 단계에서 중단`
             : "[orchestrator] 5단계 모두 완료",
         );
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(result));
+        res.write(JSON.stringify({ type: "result", ...result }) + "\n");
+        res.end();
       } catch (error) {
         console.error("[orchestrator]", describeError(error));
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: describeError(error) }));
+        res.write(JSON.stringify({ type: "error", error: describeError(error) }) + "\n");
+        res.end();
       }
     });
   });
@@ -508,7 +538,7 @@ const serveIndex = process.argv.indexOf("--serve");
 
 if (aggregateFromIndex !== -1) {
   // 디버깅용: 5단계를 다시 돌리지 않고, 캐시된 결과로 취합 단계만 재시도
-  const cachePath = process.argv[aggregateFromIndex + 1] || "/tmp/orchestrator-stage-cache.json";
+  const cachePath = process.argv[aggregateFromIndex + 1] || STAGE_CACHE_PATH;
   const completed = JSON.parse(fs.readFileSync(cachePath, "utf8"));
   const apiKey = readApiKeyFromEnvFile(ENV_PATH);
   const client = new Anthropic({ apiKey });
