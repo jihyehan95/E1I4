@@ -5,6 +5,9 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>FlowPilot AI Prototype</title>
+<!-- [추가] 지도(핀+동선)용 Leaflet - API 키 불필요 -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 <style>
     :root{
       --bg:#f6f8fb;
@@ -236,7 +239,7 @@
       font-weight:700;
       margin-right:6px;
     }
-    
+
     .evolution-card{grid-column:span 12}
     .evolution-wrap{
       display:grid;
@@ -329,7 +332,7 @@
         transform:translateX(-50%);
       }
     }
-  
+
     .evolution-card{
       background:linear-gradient(180deg,#fff 0%,#fffdf8 100%);
       overflow:hidden;
@@ -580,6 +583,68 @@
     .office-stage.reject .status{background:#fee2e2;color:#b91c1c}
     .run-message.warn{background:#fffbeb;border-color:#fde68a;color:#a16207}
     .run-message.reject{background:#fff5f5;border-color:#fecaca;color:#b91c1c}
+
+    /* ===== [추가] 포켓몬 걷기·진화 애니메이션 (원래 라이트 UI 컨셉에 맞춤) ===== */
+    .poke-road{position:relative;padding-top:126px;margin-top:6px}
+    .road-line{
+      position:absolute;top:112px;left:3%;right:3%;height:3px;
+      background:repeating-linear-gradient(90deg,#e2e8f0 0 14px,transparent 14px 26px);
+      border-radius:2px;z-index:0;
+    }
+    .actor-track{
+      position:absolute;top:6px;left:0;z-index:4;
+      transition:transform 1.1s cubic-bezier(.45,0,.15,1);will-change:transform;
+    }
+    .actor{display:flex;align-items:center;justify-content:center}
+    .actor.walking{animation:walkingBob .3s infinite alternate ease-in-out}
+    @keyframes walkingBob{
+      0%{transform:translateY(0) rotate(0deg)}
+      100%{transform:translateY(-10px) rotate(4deg)}
+    }
+    .actor img{
+      width:102px;height:102px;object-fit:contain;
+      filter:drop-shadow(0 8px 12px rgba(15,23,42,.18));transition:filter .3s;
+    }
+    .actor.evolving img{animation:evolveFlash 1.4s ease-in-out forwards}
+    @keyframes evolveFlash{
+      0%{filter:drop-shadow(0 0 0 rgba(37,99,235,0));transform:scale(1)}
+      30%{filter:brightness(2) drop-shadow(0 0 20px #60a5fa);transform:scale(1.12) rotate(-3deg)}
+      60%{filter:brightness(4) drop-shadow(0 0 34px #fff);transform:scale(.9) rotate(3deg)}
+      80%{filter:brightness(2) drop-shadow(0 0 24px #60a5fa);transform:scale(1.16)}
+      100%{filter:brightness(1) drop-shadow(0 8px 12px rgba(15,23,42,.18));transform:scale(1)}
+    }
+    .poke-hud{
+      position:absolute;top:0;right:6px;text-align:right;z-index:5;
+    }
+    .poke-hud .tag{font-size:11px;font-weight:800;letter-spacing:1px;color:#2563eb;text-transform:uppercase}
+    .poke-hud .nm{font-size:15px;font-weight:800;color:#334155}
+
+    /* 담당 카드(체크포인트) — 클릭 시 하단 인라인 상세 */
+    .office-stage{cursor:pointer}
+    .office-stage:hover{border-color:#93c5fd !important;transform:translateY(-2px)}
+    .office-stage.active-agent{border-color:#2563eb !important;box-shadow:0 10px 26px rgba(37,99,235,.18)}
+    .stage-hint{display:block;margin-top:8px;font-size:11px;font-weight:800;color:#94a3b8;letter-spacing:.2px}
+
+    /* 하단 인라인 상세 영역 */
+    .detail-head{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+    .detail-head h2{margin:0}
+    .detail-close{
+      margin-left:auto;border:0;background:#eef2f7;border-radius:10px;
+      padding:8px 14px;font-weight:800;font-size:13px;cursor:pointer;color:#475569;
+    }
+    .detail-close:hover{background:#e2e8f0}
+    .m-sub-head{color:var(--muted);font-size:13px;margin:0 0 12px}
+    .m-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:2px 0 10px}
+    .m-badge{display:inline-block;font-size:12px;font-weight:800;padding:5px 10px;border-radius:999px}
+    .m-kv{margin:6px 0;font-size:13.5px;line-height:1.55}
+    .m-kv b{display:inline-block;min-width:82px;color:#475569}
+    .m-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+    .m-table th,.m-table td{border:1px solid var(--line);padding:8px 9px;text-align:left;vertical-align:top}
+    .m-table th{background:#f8fafc;font-weight:800;white-space:nowrap}
+    .m-sub{color:var(--muted);font-size:12px}
+    .m-map{height:360px;border-radius:12px;border:1px solid var(--line);margin-top:12px;z-index:1}
+    .m-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:var(--muted)}
+    .m-legend i{display:inline-block;width:20px;height:4px;border-radius:2px;vertical-align:middle;margin-right:5px}
 </style>
 </head>
 <body>
@@ -653,11 +718,29 @@
 <button class="btn" onclick="runPrototype()">AI 업무 계획 생성</button>
 <button class="btn secondary" onclick="resetPrototype()">초기화</button>
 </div>
-<div class="card evolution-card"><h2>AI 오피스 팀이 업무를 처리하고 있어요</h2><p class="muted">각 담당 직원 Agent가 자기 업무를 끝내고 다음 담당자에게 결과를 넘기는 사무실 협업 방식입니다.</p><div class="evolution-wrap"><div class="evo-stage office-stage" id="a1"><div class="poke office-avatar">👩🏻‍💼</div><span class="team-badge">기획팀</span><strong>기획 담당</strong><small>Planner Agent · 요청을 읽고 업무 조건을 정리해요</small><span class="status">대기</span></div><div class="evo-stage office-stage" id="a2"><div class="poke office-avatar">👨🏻‍💻</div><span class="team-badge">리서치팀</span><strong>리서치 담당</strong><small>Place Agent · 조건에 맞는 장소와 정보를 찾아요</small><span class="status">대기</span></div><div class="evo-stage office-stage" id="a3"><div class="poke office-avatar">👩🏻‍💻</div><span class="team-badge">운영팀</span><strong>일정 담당</strong><small>Schedule Agent · 이동 경로와 일정을 설계해요</small><span class="status">대기</span></div><div class="evo-stage office-stage" id="a4"><div class="poke office-avatar">👨🏻‍💼</div><span class="team-badge">재무팀</span><strong>경비 담당</strong><small>Cost Agent · 예산과 경비를 꼼꼼하게 검토해요</small><span class="status">대기</span></div><div class="evo-stage office-stage" id="a5"><div class="poke office-avatar">👩🏻‍🏫</div><span class="team-badge">문서팀</span><strong>문서 담당</strong><small>Document Agent · 결과를 최종 문서로 정리해요</small><span class="status">대기</span></div></div></div>
+<div class="card evolution-card"><h2>AI 오피스 팀이 업무를 처리하고 있어요</h2><p class="muted">담당 Agent가 순서대로 업무를 이어받아 진화하듯 처리합니다. <b>담당을 클릭하면 그 Agent가 한 일이 아래에 펼쳐져요.</b></p>
+<div class="poke-road">
+  <div class="road-line"></div>
+  <div class="poke-hud"><div class="tag" id="pokeStageTag">대기</div><div class="nm" id="pokeName">이상해씨</div></div>
+  <div class="actor-track" id="actorTrack"><div class="actor" id="actor"><img id="pokeImg" alt="담당 포켓몬"
+    src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/1.gif"
+    onerror="this.onerror=null;this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/1.png'"/></div></div>
+  <div class="evolution-wrap"><div class="evo-stage office-stage" id="a1" onclick="openAgentDetail('plan')"><span class="team-badge">기획팀</span><strong>기획 담당</strong><small>Planner Agent · 요청을 읽고 업무 조건을 정리해요</small><span class="status">대기</span><span class="stage-hint">🔍 클릭해 상세 보기</span></div><div class="evo-stage office-stage" id="a2" onclick="openAgentDetail('route')"><span class="team-badge">리서치팀</span><strong>리서치 담당</strong><small>Place Agent · 조건에 맞는 장소와 정보를 찾아요</small><span class="status">대기</span><span class="stage-hint">🔍 클릭해 상세 보기</span></div><div class="evo-stage office-stage" id="a3" onclick="openAgentDetail('schedule')"><span class="team-badge">운영팀</span><strong>일정 담당</strong><small>Schedule Agent · 이동 경로와 일정을 설계해요</small><span class="status">대기</span><span class="stage-hint">🔍 클릭해 상세 보기</span></div><div class="evo-stage office-stage" id="a4" onclick="openAgentDetail('budget')"><span class="team-badge">재무팀</span><strong>경비 담당</strong><small>Cost Agent · 예산과 경비를 꼼꼼하게 검토해요</small><span class="status">대기</span><span class="stage-hint">🔍 클릭해 상세 보기</span></div><div class="evo-stage office-stage" id="a5" onclick="openAgentDetail('document')"><span class="team-badge">문서팀</span><strong>문서 담당</strong><small>Document Agent · 결과를 최종 문서로 정리해요</small><span class="status">대기</span><span class="stage-hint">🔍 클릭해 상세 보기</span></div></div>
+</div></div>
+<!-- [추가 기능] 담당 클릭 시 하단에 인라인으로 펼쳐지는 상세 -->
+<div class="card results-card" id="agentDetailCard" style="display:none">
+  <div class="detail-head"><h2 id="agentDetailTitle">담당 상세</h2><button class="detail-close" onclick="hideAgentDetail()">닫기 ✕</button></div>
+  <p class="m-sub-head" id="agentDetailSub"></p>
+  <div id="agentDetailBody"></div>
+</div>
 <div class="card results-card"><h2>최종 결과 Preview</h2><p class="muted">Document Agent가 앞선 Agent 결과를 모아 실제 업무용 출장/현장심사 계획서 형태로 완성합니다.</p><div class="run-message" id="runMessage">아직 실행 전이에요. ‘AI 업무 계획 생성’을 누르면 5개 Agent가 순서대로 작업합니다.</div><div class="report-preview report-hidden" id="reportPreview"></div></div>
 </section>
 </main>
 </div>
+
+<!-- [추가] Leaflet (지도) -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <!-- 에이전트 파이프라인 결과 주입 (orchestrator가 생성). 없으면 아래 스크립트가 기존 데모 로직으로 폴백 -->
 <script src="flowpilot-data.js"></script>
 <script>
@@ -1131,28 +1214,36 @@ async function runPrototype() {
     report.classList.remove("report-ready");
   }
 
-  ["a1","a2","a3","a4","a5"].forEach(id => setStatus(id, "실행 중", "running"));
+  if (typeof hideAgentDetail === "function") hideAgentDetail();
+  if (typeof resetPokemon === "function") resetPokemon();
+
   if (message) {
     message.className = "run-message";
-    message.textContent = "orchestrator가 실제로 plan → route → schedule → budget → document를 순서대로 호출하고 있어요... (수십 초 걸릴 수 있어요)";
+    message.textContent = "담당 Agent가 순서대로 업무를 처리하고 있어요... (실서버 연결 시 수십 초 걸릴 수 있어요)";
   }
 
   const steps = [["a1","plan"], ["a2","route"], ["a3","schedule"], ["a4","budget"], ["a5","document"]];
   let result = null;
   let callFailed = "";
 
-  try {
-    const res = await fetch(ORCHESTRATOR_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(readFormValues()),
-    });
-    const payload = await res.json();
-    if (!res.ok || payload.error) throw new Error(payload.error || `서버 오류 (${res.status})`);
-    result = payload; // { data, hardStopped }
-  } catch (err) {
-    callFailed = err.message;
-  }
+  // 실제 호출은 백그라운드로 보내고, 화면에서는 포켓몬이 걸어가며 진화하는 연출을 먼저 보여준다
+  const fetchPromise = (async () => {
+    try {
+      const res = await fetch(ORCHESTRATOR_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(readFormValues()),
+      });
+      const payload = await res.json();
+      if (!res.ok || payload.error) throw new Error(payload.error || `서버 오류 (${res.status})`);
+      result = payload; // { data, hardStopped }
+    } catch (err) {
+      callFailed = err.message;
+    }
+  })();
+
+  if (typeof runPokemonSequence === "function") await runPokemonSequence(steps);
+  await fetchPromise;
 
   if (result) {
     const D = result.data;
@@ -1183,7 +1274,10 @@ async function runPrototype() {
     }
   } else {
     // 서버 미실행 등으로 실제 호출에 실패 — 예시 데이터/입력값 기반 데모로 대체
-    ["a1","a2","a3","a4","a5"].forEach(id => setStatus(id, "대기"));
+    ["a1","a2","a3","a4","a5"].forEach(id => {
+      const badge = stageBadge((window.FLOWPILOT_DATA || {})[({a1:"plan",a2:"route",a3:"schedule",a4:"budget",a5:"document"})[id]]);
+      setStatus(id, badge.label || "완료", badge.mode || "done");
+    });
     buildReport();
     if (message) {
       message.className = "run-message reject";
@@ -1207,6 +1301,8 @@ async function runPrototype() {
 
 function resetPrototype() {
   ["a1","a2","a3","a4","a5"].forEach(id => setStatus(id, "대기"));
+  if (typeof hideAgentDetail === "function") hideAgentDetail();
+  if (typeof resetPokemon === "function") resetPokemon();
   const report = document.getElementById("reportPreview");
   const message = document.getElementById("runMessage");
   const button = document.querySelector('button[onclick="runPrototype()"]');
@@ -1227,6 +1323,292 @@ function resetPrototype() {
   }
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
+</script>
+
+<!-- ===== [추가 기능] 담당 클릭 → 하단 인라인 상세 + 포켓몬 걷기·진화 애니메이션 ===== -->
+<script>
+const AGENT_META = {
+  plan:     { team:"기획팀",   title:"기획 담당 · Planner Agent",  sub:"요청을 읽고 업무 조건을 정리했어요" },
+  route:    { team:"리서치팀", title:"리서치 담당 · Place Agent",  sub:"조건에 맞는 장소와 동선을 찾았어요" },
+  schedule: { team:"운영팀",   title:"일정 담당 · Schedule Agent", sub:"이동 경로와 일정을 설계했어요" },
+  budget:   { team:"재무팀",   title:"경비 담당 · Cost Agent",     sub:"예산과 경비를 검토했어요" },
+  document: { team:"문서팀",   title:"문서 담당 · Document Agent", sub:"결과를 최종 문서로 정리했어요" },
+};
+
+// 담당(체크포인트)별 진화 형태 — 사용자가 준 HTML의 이상해씨 계열 showdown gif 사용
+const POKE_STAGES = [
+  { key:"plan",     tag:"기본 형태",  name:"이상해씨",     sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/1.gif",     fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/1.png" },
+  { key:"route",    tag:"1차 진화",   name:"이상해풀",     sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/2.gif",     fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/2.png" },
+  { key:"schedule", tag:"최종 진화",  name:"이상해꽃",     sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/3.gif",     fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/3.png" },
+  { key:"budget",   tag:"메가 진화",  name:"메가이상해꽃", sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/10033.png", fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/3.png" },
+  { key:"document", tag:"업무 완료",  name:"메가이상해꽃", sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/10033.png", fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/3.png" },
+];
+let CURRENT_POKE_STEP = 0;
+
+function pokeParts() {
+  return {
+    road:  document.querySelector(".poke-road"),
+    track: document.getElementById("actorTrack"),
+    actor: document.getElementById("actor"),
+    img:   document.getElementById("pokeImg"),
+    tag:   document.getElementById("pokeStageTag"),
+    name:  document.getElementById("pokeName"),
+  };
+}
+// 담당 카드 중심에 액터를 정렬시키는 X 좌표(가로 배치일 때만 유효)
+function pokeTargetX(i) {
+  const card = document.getElementById("a" + (i + 1));
+  const track = document.getElementById("actorTrack");
+  if (!card || !track) return 0;
+  return card.offsetLeft + card.offsetWidth / 2 - track.offsetWidth / 2;
+}
+function setPokeSprite(p, stage) {
+  p.img.onerror = () => { p.img.onerror = null; p.img.src = stage.fallback; };
+  p.img.src = stage.sprite;
+  if (p.tag)  p.tag.textContent = stage.tag;
+  if (p.name) p.name.textContent = stage.name;
+}
+function resetPokemon() {
+  const p = pokeParts();
+  if (!p.track) return;
+  CURRENT_POKE_STEP = 0;
+  p.actor.className = "actor";
+  setPokeSprite(p, POKE_STAGES[0]);
+  p.track.style.transition = "none";
+  p.track.style.transform = `translateX(${pokeTargetX(0)}px)`;
+  // 강제 리플로우 후 트랜지션 복구
+  void p.track.offsetWidth;
+  p.track.style.transition = "";
+}
+// 한 체크포인트로 걸어가서 진화(섬광) — Promise
+function walkAndEvolveTo(i) {
+  return new Promise((resolve) => {
+    const p = pokeParts();
+    if (!p.track) return resolve();
+    CURRENT_POKE_STEP = i;
+    p.actor.classList.add("walking");
+    p.track.style.transform = `translateX(${pokeTargetX(i)}px)`;
+    const travel = (i === 0) ? 150 : 850;
+    setTimeout(() => {
+      p.actor.classList.remove("walking");
+      p.actor.classList.add("evolving");
+      setTimeout(() => { setPokeSprite(p, POKE_STAGES[i]); }, 450); // 섬광 중간에 형태 교체
+      setTimeout(() => { p.actor.classList.remove("evolving"); resolve(); }, 1250);
+    }, travel);
+  });
+}
+// 파이프라인 순서대로 걷기+진화 연출 (각 담당 상태 배지도 갱신)
+async function runPokemonSequence(steps) {
+  ["a1","a2","a3","a4","a5"].forEach(id => setStatus(id, "대기"));
+  for (let i = 0; i < steps.length; i++) {
+    const [id] = steps[i];
+    setStatus(id, "실행 중", "running");
+    await walkAndEvolveTo(i);
+    setStatus(id, "완료", "done"); // 최종 실제/샘플 상태는 runPrototype에서 다시 덮어씀
+  }
+}
+
+const AGENT_RENDER = {
+  plan: (D) => {
+    const p = D.plan || {}, per = p.period || {};
+    return `
+      <div class="m-kv"><b>사업명</b>${esc(p.projectName || "-")}</div>
+      <div class="m-kv"><b>업무유형</b>${esc(p.taskType || "-")}</div>
+      <div class="m-kv"><b>목적</b>${esc(p.purpose || "-")}</div>
+      <div class="m-kv"><b>지역</b>${esc(p.region || "-")}</div>
+      <div class="m-kv"><b>기간</b>${esc(formatDate(per.start))} ~ ${esc(formatDate(per.end))} (${per.nights || 0}박 ${per.days || 0}일)</div>
+      <div class="m-kv"><b>인원</b>총 ${(p.peopleTotal || 0).toLocaleString()}명</div>
+      <div class="m-kv"><b>예산상한</b>${(p.budgetLimit || 0).toLocaleString()}원</div>
+      <div class="m-kv"><b>지출항목</b>${esc(p.expenseCategory || "-")}</div>
+      ${(p.personnel && p.personnel.length) ? `
+        <table class="m-table">
+          <thead><tr><th>소속</th><th>인원</th><th>구성</th></tr></thead>
+          <tbody>${p.personnel.map(x => `<tr><td>${esc(x.org)}</td><td>${x.count}명</td><td>${esc(x.members)}</td></tr>`).join("")}</tbody>
+        </table>` : ""}
+    `;
+  },
+  route: (D) => {
+    const vs = D.route?.visits || [];
+    return `
+      <table class="m-table">
+        <thead><tr><th>연번</th><th>구분</th><th>대상지명</th><th>소재지</th><th>도착</th><th>이동</th></tr></thead>
+        <tbody>${vs.map(v => `
+          <tr${v.excluded ? ' style="color:#b91c1c"' : ''}>
+            <td>${v.excluded ? "–" : v.no}</td><td>${esc(v.type)}</td><td>${esc(v.name)}</td>
+            <td>${esc(v.address)}</td><td>${esc(v.arrive)}</td><td>${esc(v.moveFromPrev)}</td>
+          </tr>`).join("")}</tbody>
+      </table>
+      <div class="m-map" id="agentMap"></div>
+      <div class="m-legend">
+        <span><i style="background:#2563eb"></i>1일차 동선</span>
+        <span><i style="background:#7c3aed"></i>2일차 동선</span>
+        <span><i style="background:#16a34a;width:11px;height:11px;border-radius:50%"></i>숙소</span>
+      </div>
+    `;
+  },
+  schedule: (D) => {
+    const rows = D.schedule?.rows || [];
+    return `
+      <table class="m-table">
+        <thead><tr><th>일자</th><th>시간</th><th>장소</th><th>주요내용</th><th>이동/체류</th></tr></thead>
+        <tbody>${rows.map(r => {
+          const w = r.state === "warn" || r.state === "adjust";
+          return `<tr${w ? ' style="background:#fffbeb"' : ''}>
+            <td>${esc(r.date)}</td><td>${esc(r.time)}</td>
+            <td>${esc(r.place)}${w ? ' <b style="color:#a16207">⚠</b>' : ''}</td>
+            <td>${esc(r.work || "")}</td><td>${esc(r.move || "-")} / ${esc(r.dwell || "-")}</td>
+          </tr>`;
+        }).join("")}</tbody>
+      </table>
+    `;
+  },
+  budget: (D) => {
+    const b = D.budget || {}, rows = b.rows || [];
+    const total = b.total || 0;
+    const limit = b.budgetLimit || D.plan?.budgetLimit || total;
+    const over = total > limit;
+    return `
+      <table class="m-table">
+        <thead><tr><th>항목</th><th>산식</th><th style="text-align:right">금액</th></tr></thead>
+        <tbody>
+          ${rows.map(r => `<tr><td>${esc(r.name)}</td><td class="m-sub">${esc(r.formula || "")}</td><td style="text-align:right">${(r.amount || 0).toLocaleString()}원</td></tr>`).join("")}
+          <tr><td colspan="2" style="font-weight:800">합계</td><td style="text-align:right;font-weight:800">${total.toLocaleString()}원</td></tr>
+        </tbody>
+      </table>
+      <div class="m-kv" style="margin-top:14px"><b>예산상한</b>${limit.toLocaleString()}원</div>
+      <div class="m-row">
+        <span class="m-badge" style="background:${over ? '#fee2e2' : '#dcfce7'};color:${over ? '#b91c1c' : '#15803d'}">${esc(b.label || (over ? '초과' : '가능'))}</span>
+        <span class="m-sub">${over ? `${(total - limit).toLocaleString()}원 초과` : `${(limit - total).toLocaleString()}원 여유`}${b.reason ? ` · ${esc(b.reason)}` : ""}</span>
+      </div>
+    `;
+  },
+  document: (D) => {
+    const doc = D.document || {};
+    return `
+      <div class="m-kv"><b>문서명</b>${esc(doc.title || "-")}</div>
+      <div class="m-kv"><b>작성자</b>${esc(doc.author || "-")}</div>
+      <div class="m-kv"><b>작성일</b>${esc(doc.createdAt || "-")}</div>
+      ${doc.hotel ? `<div class="m-kv"><b>숙소</b>${esc(doc.hotel)}</div>` : ""}
+      ${doc.note ? `<div class="m-kv"><b>비고</b>${esc(doc.note)}</div>` : ""}
+      <button class="btn" style="margin-top:16px" onclick="openFinalReport()">최종 계획서 미리보기 열기 ↓</button>
+    `;
+  },
+};
+
+let AGENT_MAP = null;
+
+// 담당 클릭 → 하단 결과 영역에 인라인으로 상세를 펼친다
+function openAgentDetail(key) {
+  const D = window.FLOWPILOT_DATA;
+  if (!D) { alert("아직 데이터가 없어요. 예시 데이터(flowpilot-data.js)를 불러오지 못했습니다."); return; }
+  const meta = AGENT_META[key];
+  const stage = D[key] || {};
+  const badge = stageBadge(stage);
+  const badgeColors = {
+    done:["#dcfce7","#15803d"], running:["#dbeafe","#1d4ed8"], warn:["#fef9c3","#a16207"],
+    request:["#dbeafe","#1d4ed8"], reject:["#fee2e2","#b91c1c"], "":["#eef2f7","#64748b"],
+  };
+  const bc = badgeColors[badge.mode] || badgeColors[""];
+
+  document.getElementById("agentDetailTitle").textContent = meta.title;
+  document.getElementById("agentDetailSub").textContent = `${meta.team} · ${meta.sub}`;
+  document.getElementById("agentDetailBody").innerHTML = `
+    <div class="m-row">
+      <span class="m-badge" style="background:${bc[0]};color:${bc[1]}">${esc(badge.label)}</span>
+      ${stage.reason ? `<span class="m-sub">${esc(stage.reason)}</span>` : ""}
+    </div>
+    ${AGENT_RENDER[key](D)}
+  `;
+
+  const card = document.getElementById("agentDetailCard");
+  card.style.display = "block";
+
+  // 클릭한 담당 카드 강조
+  ["a1","a2","a3","a4","a5"].forEach(id => document.getElementById(id)?.classList.remove("active-agent"));
+  const idByKey = { plan:"a1", route:"a2", schedule:"a3", budget:"a4", document:"a5" };
+  document.getElementById(idByKey[key])?.classList.add("active-agent");
+
+  if (AGENT_MAP) { AGENT_MAP.remove(); AGENT_MAP = null; }
+  if (key === "route") setTimeout(() => initAgentMap(D), 60);
+
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function hideAgentDetail() {
+  const card = document.getElementById("agentDetailCard");
+  if (card) card.style.display = "none";
+  ["a1","a2","a3","a4","a5"].forEach(id => document.getElementById(id)?.classList.remove("active-agent"));
+  if (AGENT_MAP) { AGENT_MAP.remove(); AGENT_MAP = null; }
+}
+
+// 문서 담당 상세의 '최종 계획서 열기' 버튼 → 하단 미리보기 렌더 + 노출
+function openFinalReport() {
+  buildReport();
+  const report = document.getElementById("reportPreview");
+  report.classList.remove("report-hidden");
+  report.classList.add("report-ready");
+  closeAgentModal();
+  report.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/* ── Leaflet 지도(핀 + 동선) — 리서치 담당 모달 전용 ── */
+function numIcon(n, color) {
+  return L.divIcon({
+    className: "",
+    html: `<div style="background:${color};width:30px;height:30px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:grid;place-items:center;box-shadow:0 3px 7px rgba(0,0,0,.35);border:2px solid #fff"><span style="transform:rotate(45deg);color:#fff;font-weight:800;font-size:14px">${n}</span></div>`,
+    iconSize: [30, 30], iconAnchor: [15, 30],
+  });
+}
+function homeIcon() {
+  return L.divIcon({
+    className: "",
+    html: `<div style="background:#16a34a;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;box-shadow:0 3px 7px rgba(0,0,0,.35);border:2px solid #fff;font-size:13px">🏨</div>`,
+    iconSize: [26, 26], iconAnchor: [13, 13],
+  });
+}
+function initAgentMap(D) {
+  const el = document.getElementById("agentMap");
+  if (!el || typeof L === "undefined") return;
+  if (AGENT_MAP) { AGENT_MAP.remove(); AGENT_MAP = null; }
+  AGENT_MAP = L.map(el, { scrollWheelZoom: false }).setView([33.38, 126.55], 10);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18, attribution: "&copy; OpenStreetMap contributors",
+  }).addTo(AGENT_MAP);
+
+  const dayColor = { 1: "#2563eb", 2: "#7c3aed" };
+  const bounds = [], paths = {};
+  (D.route?.visits || []).filter(v => !v.excluded).forEach(v => {
+    if (v.lat == null || v.lng == null) return;
+    const c = [v.lat, v.lng];
+    bounds.push(c);
+    L.marker(c, { icon: numIcon(v.no, dayColor[v.day] || "#2563eb") }).addTo(AGENT_MAP)
+      .bindPopup(`<b>${esc(v.name)}</b><br>${esc(v.address)}<br><small>${v.day ? v.day + "일차" : ""} · 도착 ${esc(v.arrive)}</small>`);
+    (paths[v.day] = paths[v.day] || []).push(c);
+  });
+  Object.entries(paths).forEach(([d, pts]) => {
+    if (pts.length > 1) L.polyline(pts, { color: dayColor[d] || "#2563eb", weight: 4, opacity: .8 }).addTo(AGENT_MAP);
+  });
+
+  const hLat = D.document?.hotelLat, hLng = D.document?.hotelLng;
+  if (hLat != null && hLng != null) {
+    bounds.push([hLat, hLng]);
+    L.marker([hLat, hLng], { icon: homeIcon() }).addTo(AGENT_MAP).bindPopup(`<b>숙소</b><br>${esc(D.document?.hotel || "")}`);
+  }
+
+  if (bounds.length) AGENT_MAP.fitBounds(bounds, { padding: [35, 35] });
+  setTimeout(() => AGENT_MAP.invalidateSize(), 60);
+}
+
+// 초기 포켓몬 위치 배치 + 창 크기 변경 시 현재 단계로 재정렬
+window.addEventListener("load", () => { setTimeout(resetPokemon, 80); });
+window.addEventListener("resize", () => {
+  const track = document.getElementById("actorTrack");
+  if (!track) return;
+  track.style.transition = "none";
+  track.style.transform = `translateX(${pokeTargetX(CURRENT_POKE_STEP)}px)`;
+  void track.offsetWidth;
+  track.style.transition = "";
+});
 </script>
 </body>
 </html>

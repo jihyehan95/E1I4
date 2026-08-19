@@ -46,13 +46,14 @@ window.FLOWPILOT_DATA = {
     state: "ok",                 // ok | reject
     label: "통과",
     reason: "방문 가능 기간 내 전 지점 도착 가능, 반려 사유 없음",
+    // lat/lng: Leaflet 지도의 핀·동선 표기용 좌표(제주 실제 위치 근사값, 시연용)
     visits: [
-      { no: 1, day: 1, type: "해녀",   name: "귀덕1리 어촌계",              address: "제주시 한림읍 귀덕9길 8, 2층",        moveFromPrev: "-",       arrive: "09:00", excluded: false },
-      { no: 2, day: 1, type: "어촌계", name: "상모 어촌계(산이수동 해녀탈의장)", address: "서귀포시 대정읍 형제해안로 313",     moveFromPrev: "약 30분", arrive: "09:30", excluded: false },
-      { no: 3, day: 1, type: "어촌계", name: "위미2리 어촌계",              address: "서귀포시 남원읍 위미리 791-1",        moveFromPrev: "약 40분", arrive: "10:10", excluded: false },
-      { no: 4, day: 2, type: "어촌계", name: "신산리 어촌계 중부탈의장",     address: "서귀포시 성산읍 환해장성로 84",       moveFromPrev: "약 30분", arrive: "09:00", excluded: false },
-      { no: 5, day: 2, type: "어촌계", name: "행원육상양식단지협의회",       address: "제주시 구좌읍 해맞이해안로 680-7",     moveFromPrev: "약 25분", arrive: "09:30", excluded: false },
-      { no: 6, day: null, type: "해녀", name: "수협재단 모집 중 장소",        address: "주소 미정",                          moveFromPrev: "동선 제외", arrive: "-",     excluded: true, excludeReason: "주소 미정" }
+      { no: 1, day: 1, type: "해녀",   name: "귀덕1리 어촌계",              address: "제주시 한림읍 귀덕9길 8, 2층",        moveFromPrev: "-",       arrive: "09:00", excluded: false, lat: 33.4116, lng: 126.2450 },
+      { no: 2, day: 1, type: "어촌계", name: "상모 어촌계(산이수동 해녀탈의장)", address: "서귀포시 대정읍 형제해안로 313",     moveFromPrev: "약 30분", arrive: "09:30", excluded: false, lat: 33.2270, lng: 126.3100 },
+      { no: 3, day: 1, type: "어촌계", name: "위미2리 어촌계",              address: "서귀포시 남원읍 위미리 791-1",        moveFromPrev: "약 40분", arrive: "10:10", excluded: false, lat: 33.2760, lng: 126.6660 },
+      { no: 4, day: 2, type: "어촌계", name: "신산리 어촌계 중부탈의장",     address: "서귀포시 성산읍 환해장성로 84",       moveFromPrev: "약 30분", arrive: "09:00", excluded: false, lat: 33.3470, lng: 126.8900 },
+      { no: 5, day: 2, type: "어촌계", name: "행원육상양식단지협의회",       address: "제주시 구좌읍 해맞이해안로 680-7",     moveFromPrev: "약 25분", arrive: "09:30", excluded: false, lat: 33.5560, lng: 126.7960 },
+      { no: 6, day: null, type: "해녀", name: "수협재단 모집 중 장소",        address: "주소 미정",                          moveFromPrev: "동선 제외", arrive: "-",     excluded: true, excludeReason: "주소 미정", lat: null, lng: null }
     ]
   },
 
@@ -95,6 +96,7 @@ window.FLOWPILOT_DATA = {
     author: "주OO",
     createdAt: "2026-08-12",
     hotel: "제주 애월읍 애월해안로 400-9",
+    hotelLat: 33.4650, hotelLng: 126.3100,   // 숙소 지도 표기용 좌표(근사값)
     note: "수협재단 모집 중 장소(연번 6)는 주소 미정으로 이번 일정에서 제외됨"
   }
 };
