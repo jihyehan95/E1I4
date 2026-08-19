@@ -197,6 +197,42 @@
       cursor:pointer;
       padding:0;
     }
+    .screen-hidden{display:none !important}
+    .start-choice-grid{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:16px;
+      margin-top:14px;
+    }
+    .start-choice-card{
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:26px 20px;
+      text-align:center;
+      cursor:pointer;
+      background:#fff;
+      transition:box-shadow .15s, border-color .15s;
+    }
+    .start-choice-card:hover{border-color:var(--primary);box-shadow:var(--shadow)}
+    .start-choice-card .emoji{font-size:34px;display:block;margin-bottom:10px}
+    .start-choice-card h3{margin:0 0 6px}
+    .start-choice-card p{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
+    @media (max-width:640px){.start-choice-grid{grid-template-columns:1fr}}
+    .dropzone{
+      border:2px dashed var(--line);
+      border-radius:14px;
+      padding:26px 16px;
+      text-align:center;
+      cursor:pointer;
+      background:#fafbfd;
+      transition:border-color .15s, background .15s;
+    }
+    .dropzone.drag-over{border-color:var(--primary);background:var(--primary-soft)}
+    .dropzone p{margin:4px 0}
+    .dropzone .attach-name{display:block;margin-top:8px;font-weight:700}
+    .parse-status{font-size:12px;margin-top:8px;color:var(--muted)}
+    .parse-status.warn{color:var(--amber)}
+    .parse-status.ok{color:var(--green)}
     .agent-list{
       display:grid;
       grid-template-columns:1fr;
@@ -712,10 +748,26 @@
 <div class="step">⑤ 최종 문서 작성</div>
 </div>
 </section>
-<section class="grid">
+<section class="card" id="startScreen">
+<h2>어떤 양식으로 시작할까요?</h2>
+<p class="muted">기본 양식을 바로 쓰거나, 우리 회사 자체 양식을 올려서 그 양식에 맞춘 입력칸으로 시작할 수 있어요.</p>
+<div class="start-choice-grid">
+<div class="start-choice-card" onclick="chooseDefaultForm()">
+<span class="emoji">📋</span>
+<h3>기본양식 사용하기</h3>
+<p>지금 준비된 입력 항목으로 바로 시작해요.</p>
+</div>
+<div class="start-choice-card" onclick="chooseCustomForm()">
+<span class="emoji">🏢</span>
+<h3>자사 양식 넣기</h3>
+<p>회사 자체 신청 양식을 올리면 AI가 항목을 읽어 입력칸을 만들어줘요.</p>
+</div>
+</div>
+</section>
+<section class="grid screen-hidden" id="mainGrid">
 <div class="card input-card">
 <h2>업무 Input</h2>
-<div class="field-grid">
+<div class="field-grid" id="defaultFormFields">
 <div>
 <label>업무 유형</label>
 <select id="taskType">
@@ -761,15 +813,27 @@
 <label>참고사항</label>
 <textarea id="conditions" placeholder="예: 숙소 위치, 점심 시간, 방문 순서 조건, 요청하는 산출물 등"></textarea>
 </div>
-<div class="full">
-<label>보고서 형식 (선택)</label>
-<div class="attach-row">
-<button type="button" class="btn secondary" onclick="document.getElementById('reportTemplateFile').click()">📎 파일 첨부</button>
-<span class="attach-name" id="attachName">첨부된 파일 없음</span>
-<button type="button" class="attach-remove" id="attachRemoveBtn" style="display:none" onclick="removeAttachment()">제거</button>
 </div>
-<input type="file" id="reportTemplateFile" accept=".pdf,.png,.jpg,.jpeg" style="display:none" onchange="handleAttachmentChange(event)"/>
-<p class="muted" style="font-size:11px;margin:6px 0 0">참고할 보고서 형식(PDF/이미지)을 첨부하면 문서 담당(Document Agent)이 형식을 맞춰서 작성해요. (PDF·이미지는 내용까지 실제로 참고, 그 외 형식은 파일명만 참고)</p>
+<div id="customFormFields" style="display:none">
+<div class="full">
+<label>자사 양식 업로드</label>
+<div class="dropzone" id="templateDropzone" onclick="document.getElementById('customTemplateFile').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="handleTemplateDrop(event)">
+<p>📎 파일을 끌어다 놓거나 클릭해서 첨부하세요</p>
+<p class="muted" style="font-size:11px">PDF · 이미지(PNG/JPG) · DOCX · HWP · HWPX</p>
+<span class="attach-name" id="customAttachName">첨부된 파일 없음</span>
+</div>
+<input type="file" id="customTemplateFile" accept=".pdf,.png,.jpg,.jpeg,.docx,.hwp,.hwpx" style="display:none" onchange="handleCustomTemplateChange(event)"/>
+<button type="button" class="btn" id="parseTemplateBtn" style="margin-top:10px" onclick="startCustomTemplateParse()" disabled>입력 시작하기</button>
+<p class="parse-status" id="parseStatus"></p>
+</div>
+<div class="field-grid" id="dynamicFieldGrid"></div>
+<div class="full" id="dynamicFreeTextWrap" style="display:none;margin-top:14px">
+<label>추가 내용 (AI가 못 읽은 항목은 여기에 적어주세요)</label>
+<textarea id="dynamicFreeText" placeholder="자동으로 인식하지 못한 항목이나 보충 설명을 자유롭게 적어주세요"></textarea>
+</div>
+<div class="full" id="dynamicAuthorWrap" style="display:none;margin-top:14px">
+<label>작성자</label>
+<input type="text" id="dynamicAuthor" value="주OO"/>
 </div>
 </div>
 <button class="btn" onclick="runPrototype()">AI 업무 계획 생성</button>
@@ -868,32 +932,118 @@ function removeVisit(index) {
   renderVisitList();
 }
 
-// ── 보고서 형식 첨부 (PDF/이미지는 실제 내용까지 document 담당에게 전달) ──
-let attachedTemplate = null; // { name, mediaType, base64 }
+// ── 시작화면: 기본양식 / 자사양식 선택 ──
+let USING_CUSTOM_FORM = false;
 
-function handleAttachmentChange(event) {
+function chooseDefaultForm() {
+  document.getElementById("startScreen").classList.add("screen-hidden");
+  document.getElementById("mainGrid").classList.remove("screen-hidden");
+  document.getElementById("defaultFormFields").style.display = "";
+  document.getElementById("customFormFields").style.display = "none";
+  USING_CUSTOM_FORM = false;
+}
+
+function chooseCustomForm() {
+  document.getElementById("startScreen").classList.add("screen-hidden");
+  document.getElementById("mainGrid").classList.remove("screen-hidden");
+  document.getElementById("defaultFormFields").style.display = "none";
+  document.getElementById("customFormFields").style.display = "";
+  USING_CUSTOM_FORM = true;
+}
+
+// ── 자사 양식 업로드 → AI 파싱 → 입력칸 자동 생성 ──
+const TEMPLATE_PARSE_ENDPOINT = "http://localhost:8788/parse-template";
+let customTemplateFile = null; // { name, mediaType, base64 }
+let customParsedFields = [];
+
+function handleCustomTemplateChange(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
     const base64 = String(reader.result).split(",")[1] || "";
-    attachedTemplate = { name: file.name, mediaType: file.type, base64 };
-    const nameEl = document.getElementById("attachName");
-    const removeBtn = document.getElementById("attachRemoveBtn");
+    customTemplateFile = { name: file.name, mediaType: file.type, base64 };
+    const nameEl = document.getElementById("customAttachName");
     if (nameEl) nameEl.textContent = file.name;
-    if (removeBtn) removeBtn.style.display = "inline";
+    const btn = document.getElementById("parseTemplateBtn");
+    if (btn) btn.disabled = false;
   };
   reader.readAsDataURL(file);
 }
 
-function removeAttachment() {
-  attachedTemplate = null;
-  const fileInput = document.getElementById("reportTemplateFile");
-  const nameEl = document.getElementById("attachName");
-  const removeBtn = document.getElementById("attachRemoveBtn");
-  if (fileInput) fileInput.value = "";
-  if (nameEl) nameEl.textContent = "첨부된 파일 없음";
-  if (removeBtn) removeBtn.style.display = "none";
+function handleTemplateDrop(event) {
+  event.preventDefault();
+  const zone = document.getElementById("templateDropzone");
+  if (zone) zone.classList.remove("drag-over");
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) return;
+  const input = document.getElementById("customTemplateFile");
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  input.files = dt.files;
+  handleCustomTemplateChange({ target: input });
+}
+
+async function startCustomTemplateParse() {
+  if (!customTemplateFile) return;
+  const btn = document.getElementById("parseTemplateBtn");
+  const status = document.getElementById("parseStatus");
+  if (btn) btn.disabled = true;
+  if (status) { status.className = "parse-status"; status.textContent = "양식을 읽는 중이에요..."; }
+
+  try {
+    const res = await fetch(TEMPLATE_PARSE_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fileName: customTemplateFile.name,
+        mediaType: customTemplateFile.mediaType,
+        base64: customTemplateFile.base64,
+      }),
+    });
+    const payload = await res.json();
+    if (!res.ok || payload.error) throw new Error(payload.error || `서버 오류 (${res.status})`);
+    renderDynamicFields(payload.fields || [], payload.confidence, payload.note);
+  } catch (err) {
+    if (status) {
+      status.className = "parse-status warn";
+      status.textContent = `양식을 읽지 못했어요: ${err.message} (터미널에서 node orchestrator/call-agent --serve 를 켰는지 확인해 주세요.) 아래에서 직접 입력해 주세요.`;
+    }
+    renderDynamicFields([], "low", "");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function renderDynamicFields(fields, confidence, note) {
+  customParsedFields = fields;
+  const grid = document.getElementById("dynamicFieldGrid");
+  if (grid) {
+    grid.innerHTML = fields.map(f => `
+      <div class="${f.type === 'textarea' ? 'full' : ''}">
+        <label>${esc(f.label)}</label>
+        ${f.type === "textarea"
+          ? `<textarea id="dyn_${esc(f.id)}" placeholder="${esc(f.hint || "")}"></textarea>`
+          : `<input id="dyn_${esc(f.id)}" type="${f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text'}" placeholder="${esc(f.hint || "")}"/>`}
+      </div>
+    `).join("");
+  }
+
+  const status = document.getElementById("parseStatus");
+  if (status) {
+    if (confidence === "low" || !fields.length) {
+      status.className = "parse-status warn";
+      status.textContent = note
+        ? `⚠ 일부만 인식했어요: ${note} 아래에서 직접 채우거나 추가 내용에 적어주세요.`
+        : "⚠ 양식에서 입력 항목을 거의 찾지 못했어요. 아래 추가 내용에 직접 적어주세요.";
+    } else {
+      status.className = "parse-status ok";
+      status.textContent = `✅ ${fields.length}개 항목을 인식했어요. 확인하고 채워주세요.`;
+    }
+  }
+
+  document.getElementById("dynamicFreeTextWrap").style.display = "";
+  document.getElementById("dynamicAuthorWrap").style.display = "";
 }
 
 renderVisitList();
@@ -1200,6 +1350,17 @@ function buildReport() {
 const ORCHESTRATOR_ENDPOINT = "http://localhost:8788/run";
 
 function readFormValues() {
+  if (USING_CUSTOM_FORM) {
+    return {
+      customForm: true,
+      customFormAnswers: customParsedFields.map(f => ({
+        label: f.label,
+        value: document.getElementById(`dyn_${f.id}`)?.value || "",
+      })),
+      customFormFreeText: document.getElementById("dynamicFreeText")?.value || "",
+      author: document.getElementById("dynamicAuthor")?.value || "",
+    };
+  }
   return {
     taskType: document.getElementById("taskType")?.value || "",
     region: document.getElementById("region")?.value || "",
@@ -1212,11 +1373,12 @@ function readFormValues() {
     conditions: document.getElementById("conditions")?.value || "",
     projectName: document.getElementById("projectName")?.value || "",
     author: document.getElementById("author")?.value || "",
-    reportTemplateName: attachedTemplate?.name || "",
-    reportTemplateMediaType: attachedTemplate?.mediaType || "",
-    reportTemplateBase64: attachedTemplate?.base64 || "",
   };
 }
+
+// 실제로 "AI 업무 계획 생성"을 실행하기 전까지는 null — 담당 클릭 시 flowpilot-data.js의
+// 샘플이 미리 보이지 않도록, 담당 상세는 이 값이 있을 때만 연다.
+let ACTIVE_DATA = null;
 
 async function runPrototype() {
   const button = document.querySelector('button[onclick="runPrototype()"]');
@@ -1268,6 +1430,7 @@ async function runPrototype() {
 
   if (result) {
     const D = result.data;
+    ACTIVE_DATA = D;
     const flagged = [];
     for (const [id, key] of steps) {
       const stage = D[key];
@@ -1296,6 +1459,7 @@ async function runPrototype() {
   } else {
     // 서버 미실행 등으로 실제 호출에 실패 — 입력값 기반 임시 결과로 대체
     const fallback = window.FLOWPILOT_DATA || buildFallbackData();
+    ACTIVE_DATA = fallback;
     ["a1","a2","a3","a4","a5"].forEach(id => {
       const badge = stageBadge(fallback[({a1:"plan",a2:"route",a3:"schedule",a4:"budget",a5:"document"})[id]]);
       setStatus(id, badge.label || "완료", badge.mode || "done");
@@ -1322,6 +1486,7 @@ async function runPrototype() {
 }
 
 function resetPrototype() {
+  ACTIVE_DATA = null;
   ["a1","a2","a3","a4","a5"].forEach(id => setStatus(id, "대기"));
   if (typeof hideAgentDetail === "function") hideAgentDetail();
   if (typeof resetPokemon === "function") resetPokemon();
@@ -1521,7 +1686,8 @@ let AGENT_MAP = null;
 
 // 담당 클릭 → 하단 결과 영역에 인라인으로 상세를 펼친다
 function openAgentDetail(key) {
-  const D = window.FLOWPILOT_DATA || buildFallbackData();
+  const D = ACTIVE_DATA;
+  if (!D) return; // 아직 "AI 업무 계획 생성"을 실행하지 않았으면 담당 상세를 열지 않는다
   const meta = AGENT_META[key];
   const stage = D[key] || {};
   const badge = stageBadge(stage);
