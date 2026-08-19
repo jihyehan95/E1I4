@@ -106,13 +106,13 @@
       padding:22px;
     }
     .card h2,.card h3{margin-top:0}
-    .input-card{grid-column:span 5}
+    .input-card{grid-column:1/-1}
     .agent-card{grid-column:span 7}
     .results-card{grid-column:span 12}
     .field-grid{
       display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:12px;
+      grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
+      gap:14px 16px;
     }
     label{
       font-size:13px;
@@ -145,6 +145,57 @@
       background:#eef2f7;
       color:#334155;
       margin-left:8px;
+    }
+    .visit-add-row{
+      display:flex;
+      gap:8px;
+    }
+    .visit-add-row input{flex:1}
+    .visit-add-btn{margin-left:0;margin-top:0;white-space:nowrap}
+    .visit-list{
+      margin-top:10px;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+    .visit-item{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      background:#f8fafc;
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:9px 12px;
+      font-size:13px;
+    }
+    .visit-item button{
+      border:0;
+      background:transparent;
+      color:#94a3b8;
+      font-weight:800;
+      font-size:16px;
+      line-height:1;
+      cursor:pointer;
+      padding:0 4px;
+    }
+    .visit-item button:hover{color:#e11d48}
+    .visit-empty{font-size:12px;color:var(--muted);margin:2px 0 0}
+    .attach-row{
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    .attach-row .btn.secondary{margin:0}
+    .attach-name{font-size:13px;color:var(--muted)}
+    .attach-remove{
+      border:0;
+      background:transparent;
+      color:#e11d48;
+      font-weight:700;
+      font-size:12px;
+      cursor:pointer;
+      padding:0;
     }
     .agent-list{
       display:grid;
@@ -668,10 +719,9 @@
 <div>
 <label>업무 유형</label>
 <select id="taskType">
-<option>현장 방문 출장</option>
-<option>고객 방문</option>
-<option>프랜차이즈 점검</option>
-<option>사회복지 현장 방문</option>
+<option>출장</option>
+<option>외근</option>
+<option>기타</option>
 </select>
 </div>
 <div>
@@ -692,27 +742,38 @@
 </div>
 <div>
 <label>예산</label>
-<input id="budget" type="number" value="1900000"/>
-</div><div><label>기관/프로젝트명</label><input id="projectName" value="현장업무 운영 프로젝트"/></div><div><label>작성자</label><input id="author" value="주OO"/></div>
+<input id="budget" type="text" inputmode="numeric" value="1,900,000" oninput="formatMoneyInput(this)"/>
+</div><div><label>프로젝트명</label><input id="projectName" value="현장업무 운영 프로젝트"/></div><div><label>작성자</label><input id="author" value="주OO"/></div>
 <div class="full">
 <label>목적</label>
 <textarea id="purpose">제주 소재 지원사업 대상 시설 현장심사 및 견적 산출</textarea>
 </div>
 <div class="full">
 <label>방문 대상</label>
-<textarea id="visits">행원육상양식단지협의회 - 제주 구좌읍 해맞이해안로 680-7
-신산리 어촌계 중부탈의장 - 제주 성산읍 환해장성로 84
-위미2리 어촌계 - 제주 남원읍 위미리 791-1
-상모 어촌계 - 제주 대정읍 형제해안로 313
-귀덕1리 어촌계 - 제주 한림읍 귀덕9길 8</textarea>
+<div class="visit-add-row">
+<input type="text" id="visitInput" placeholder="장소명 - 주소 (예: 상모 어촌계 - 제주 대정읍 형제해안로 313)" onkeydown="if(event.key==='Enter'){event.preventDefault();addVisit();}"/>
+<button type="button" class="btn secondary visit-add-btn" onclick="addVisit()">추가</button>
+</div>
+<div class="visit-list" id="visitList"></div>
+<textarea id="visits" style="display:none"></textarea>
 </div>
 <div class="full">
-<label>숙소/추가 조건</label>
+<label>참고사항</label>
 <textarea id="conditions">숙소: 제주 애월읍 애월해안로 400-9
 점심: 12:00~14:00
 방문 순서는 이동시간 최소화
 점심 장소 추천
 일정표/예산표/최종 계획서 생성</textarea>
+</div>
+<div class="full">
+<label>보고서 형식 (선택)</label>
+<div class="attach-row">
+<button type="button" class="btn secondary" onclick="document.getElementById('reportTemplateFile').click()">📎 파일 첨부</button>
+<span class="attach-name" id="attachName">첨부된 파일 없음</span>
+<button type="button" class="attach-remove" id="attachRemoveBtn" style="display:none" onclick="removeAttachment()">제거</button>
+</div>
+<input type="file" id="reportTemplateFile" accept=".pdf,.png,.jpg,.jpeg" style="display:none" onchange="handleAttachmentChange(event)"/>
+<p class="muted" style="font-size:11px;margin:6px 0 0">참고할 보고서 형식(PDF/이미지)을 첨부하면 문서 담당(Document Agent)이 형식을 맞춰서 작성해요. (PDF·이미지는 내용까지 실제로 참고, 그 외 형식은 파일명만 참고)</p>
 </div>
 </div>
 <button class="btn" onclick="runPrototype()">AI 업무 계획 생성</button>
@@ -770,6 +831,82 @@ function stageBadge(stage) {
 function stageName(key) {
   return ({ plan: "기획", route: "리서치/경로", schedule: "일정", budget: "경비", document: "문서" })[key] || key;
 }
+
+function formatMoneyInput(el) {
+  const digits = el.value.replace(/[^0-9]/g, "");
+  el.value = digits ? Number(digits).toLocaleString("ko-KR") : "";
+}
+
+// ── 방문 대상: 한 곳씩 입력→추가하는 목록 UI (내부적으로는 숨겨진 textarea#visits에 동기화) ──
+let visitItems = [
+  "행원육상양식단지협의회 - 제주 구좌읍 해맞이해안로 680-7",
+  "신산리 어촌계 중부탈의장 - 제주 성산읍 환해장성로 84",
+  "위미2리 어촌계 - 제주 남원읍 위미리 791-1",
+  "상모 어촌계 - 제주 대정읍 형제해안로 313",
+  "귀덕1리 어촌계 - 제주 한림읍 귀덕9길 8",
+];
+
+function syncVisitsField() {
+  const field = document.getElementById("visits");
+  if (field) field.value = visitItems.join("\n");
+}
+
+function renderVisitList() {
+  const list = document.getElementById("visitList");
+  if (!list) return;
+  list.innerHTML = visitItems.length
+    ? visitItems.map((v, i) => `
+        <div class="visit-item"><span>${esc(v)}</span><button type="button" onclick="removeVisit(${i})" aria-label="삭제">×</button></div>
+      `).join("")
+    : `<p class="visit-empty">아직 추가된 장소가 없어요. 위 입력창에 "장소명 - 주소"를 쓰고 추가를 눌러주세요.</p>`;
+  syncVisitsField();
+}
+
+function addVisit() {
+  const input = document.getElementById("visitInput");
+  if (!input) return;
+  const value = input.value.trim();
+  if (!value) return;
+  visitItems.push(value);
+  input.value = "";
+  renderVisitList();
+  input.focus();
+}
+
+function removeVisit(index) {
+  visitItems.splice(index, 1);
+  renderVisitList();
+}
+
+// ── 보고서 형식 첨부 (PDF/이미지는 실제 내용까지 document 담당에게 전달) ──
+let attachedTemplate = null; // { name, mediaType, base64 }
+
+function handleAttachmentChange(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const base64 = String(reader.result).split(",")[1] || "";
+    attachedTemplate = { name: file.name, mediaType: file.type, base64 };
+    const nameEl = document.getElementById("attachName");
+    const removeBtn = document.getElementById("attachRemoveBtn");
+    if (nameEl) nameEl.textContent = file.name;
+    if (removeBtn) removeBtn.style.display = "inline";
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeAttachment() {
+  attachedTemplate = null;
+  const fileInput = document.getElementById("reportTemplateFile");
+  const nameEl = document.getElementById("attachName");
+  const removeBtn = document.getElementById("attachRemoveBtn");
+  if (fileInput) fileInput.value = "";
+  if (nameEl) nameEl.textContent = "첨부된 파일 없음";
+  if (removeBtn) removeBtn.style.display = "none";
+}
+
+renderVisitList();
 
 function esc(value) {
   return String(value ?? "")
@@ -1047,7 +1184,7 @@ function buildReport() {
   const startDate = document.getElementById("startDate")?.value || "";
   const endDate = document.getElementById("endDate")?.value || "";
   const people = Number(document.getElementById("people")?.value || 0);
-  const budget = Number(document.getElementById("budget")?.value || 0);
+  const budget = Number((document.getElementById("budget")?.value || "0").replace(/,/g, ""));
   const purpose = document.getElementById("purpose")?.value || "업무 목적 미입력";
   const visitsText = document.getElementById("visits")?.value || "";
   const conditionsText = document.getElementById("conditions")?.value || "";
@@ -1188,12 +1325,15 @@ function readFormValues() {
     startDate: document.getElementById("startDate")?.value || "",
     endDate: document.getElementById("endDate")?.value || "",
     people: document.getElementById("people")?.value || "",
-    budget: document.getElementById("budget")?.value || "",
+    budget: (document.getElementById("budget")?.value || "").replace(/,/g, ""),
     purpose: document.getElementById("purpose")?.value || "",
     visits: document.getElementById("visits")?.value || "",
     conditions: document.getElementById("conditions")?.value || "",
     projectName: document.getElementById("projectName")?.value || "",
     author: document.getElementById("author")?.value || "",
+    reportTemplateName: attachedTemplate?.name || "",
+    reportTemplateMediaType: attachedTemplate?.mediaType || "",
+    reportTemplateBase64: attachedTemplate?.base64 || "",
   };
 }
 
