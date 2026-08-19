@@ -5,6 +5,7 @@
   "description": "출장 기획을 지원해주는 에이전트 팀 저장소",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.1",
+    "adm-zip": "^0.5.16",
     "zod": "^4.4.3"
   }
 }

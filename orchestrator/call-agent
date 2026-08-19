@@ -12,6 +12,10 @@ const http = require("http");
 const Anthropic = require("@anthropic-ai/sdk");
 const { z } = require("zod");
 const { betaZodOutputFormat } = require("@anthropic-ai/sdk/helpers/beta/zod");
+const AdmZip = require("adm-zip");
+
+// 비용 절감을 위해 전 단계 동일 모델 사용 (opus 대신 sonnet)
+const MODEL = "claude-sonnet-5";
 
 const ROOT = path.join(__dirname, "..");
 const ENV_PATH = path.join(ROOT, ".env");
@@ -73,7 +77,7 @@ async function callStage(client, agentName, inputText, extraBlocks = []) {
     : inputText;
 
   const response = await client.messages.create({
-    model: "claude-opus-5",
+    model: MODEL,
     max_tokens: 16000,
     system,
     messages: [{ role: "user", content }],
@@ -98,6 +102,23 @@ function section(title, body) {
 }
 
 function buildPlanInput(form) {
+  if (form.customForm) {
+    // 자사 양식 경로: 표준 필드에 매핑하지 않고, 양식이 요구한 항목을 그대로 전달한다.
+    // plan 에이전트가 이미 "항목이 충분한지" 스스로 판단해 부족하면 요청/반려하므로
+    // 별도 스키마 매핑 없이도 그대로 동작한다.
+    const answers = (form.customFormAnswers || [])
+      .filter((a) => a.value && a.value.trim())
+      .map((a) => `${a.label}: ${a.value}`)
+      .join("\n");
+    return [
+      section("자사 양식 입력 내용 (사용자가 회사 자체 양식에 채운 값 그대로)", answers),
+      section("추가 설명", form.customFormFreeText),
+      section("작성자", form.author),
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
   return [
     section("출장 목적", form.purpose),
     section(
@@ -138,21 +159,11 @@ function buildBudgetInput(scheduleText, planText, form) {
   );
 }
 
-function buildDocumentInput(scheduleText, budgetText, planText, form) {
-  const isPdfOrImage =
-    form.reportTemplateBase64 &&
-    (form.reportTemplateMediaType === "application/pdf" || form.reportTemplateMediaType?.startsWith("image/"));
-  const templateNote = form.reportTemplateName
-    ? isPdfOrImage
-      ? `사용자가 참고 보고서 형식 파일(${form.reportTemplateName})을 첨부했다. 이번 메시지 앞부분에 그 파일 내용이 함께 첨부되어 있으니, 그 형식(항목 구성·표 모양·문체 등)을 최대한 참고해서 결과 문서를 작성해라.`
-      : `사용자가 참고 보고서 형식 파일(${form.reportTemplateName})을 첨부했지만, 이 형식(${form.reportTemplateMediaType || "알 수 없음"})은 내용을 자동으로 읽지 못했다. 파일명만 참고하고, 내용을 지어내지 마라.`
-    : "";
-
+function buildDocumentInput(scheduleText, budgetText, planText) {
   return (
     section("schedule 결과 (최종 일정)", scheduleText) +
     section("budget 결과 (경비 정보)", budgetText) +
-    section("plan 결과 (문서 기본 정보)", planText) +
-    section("참고 보고서 형식", templateNote)
+    section("plan 결과 (문서 기본 정보)", planText)
   );
 }
 
@@ -236,7 +247,7 @@ async function aggregate(client, completedStages) {
   // (설치된 SDK 버전의 .parse() 헬퍼가 신형 output_config.format을 못 알아보고
   //  항상 parsed_output: null을 돌려주는 버그가 있어 우회함 — API 자체는 정상 응답함)
   const response = await client.beta.messages.create({
-    model: "claude-opus-5",
+    model: MODEL,
     max_tokens: 16000,
     system,
     messages: [{ role: "user", content: body }],
@@ -298,20 +309,8 @@ async function runPipeline(form) {
   }
 
   if (!hardStopped) {
-    const documentInput = buildDocumentInput(completed.schedule.text, completed.budget.text, completed.plan.text, form);
-    const templateBlocks = [];
-    if (form.reportTemplateBase64 && form.reportTemplateMediaType === "application/pdf") {
-      templateBlocks.push({
-        type: "document",
-        source: { type: "base64", media_type: "application/pdf", data: form.reportTemplateBase64 },
-      });
-    } else if (form.reportTemplateBase64 && form.reportTemplateMediaType?.startsWith("image/")) {
-      templateBlocks.push({
-        type: "image",
-        source: { type: "base64", media_type: form.reportTemplateMediaType, data: form.reportTemplateBase64 },
-      });
-    }
-    completed.document = await callStage(client, "document", documentInput, templateBlocks);
+    const documentInput = buildDocumentInput(completed.schedule.text, completed.budget.text, completed.plan.text);
+    completed.document = await callStage(client, "document", documentInput);
     if (HARD_STOP_STATES.has(completed.document.state)) hardStopped = { stage: "document", ...completed.document };
   }
 
@@ -341,6 +340,99 @@ function describeError(error) {
   return error.message;
 }
 
+// ---- 자사 양식 파싱 (시작화면 "자사 양식 넣기") ----
+
+const TemplateFieldZ = z.object({
+  id: z.string(),
+  label: z.string(),
+  hint: z.string(),
+  type: z.enum(["text", "textarea", "date", "number"]),
+});
+const TemplateParseZ = z.object({
+  fields: z.array(TemplateFieldZ),
+  confidence: z.enum(["high", "low"]),
+  note: z.string(),
+});
+
+function stripXmlTags(xml) {
+  return xml.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+}
+
+// docx/hwpx는 zip 안에 XML로 본문이 들어있는 형식이라(둘 다 OOXML 계열),
+// 압축을 풀어 XML 텍스트만 추출한다. 비용 절감을 위해 길이를 제한한다.
+function extractZipDocumentText(base64) {
+  const buf = Buffer.from(base64, "base64");
+  const zip = new AdmZip(buf);
+  const entries = zip.getEntries().filter((e) => /\.xml$/i.test(e.entryName));
+  const preferred = entries.filter(
+    (e) => /word\/document\.xml$/i.test(e.entryName) || /^Contents\//i.test(e.entryName),
+  );
+  const picked = preferred.length ? preferred : entries;
+  const text = picked.map((e) => stripXmlTags(e.getData().toString("utf8"))).join("\n");
+  return text.slice(0, 8000);
+}
+
+async function parseTemplate(client, { fileName, mediaType, base64 }) {
+  const system =
+    "너는 회사 자체 업무/출장 신청 양식에서 사용자가 실제로 채워야 하는 입력 항목만 뽑아내는 담당이다. " +
+    "안내문·서명란·직인란·예시 문구는 항목으로 넣지 마라. " +
+    "각 항목은 id(영문 소문자·숫자·언더스코어, 문서 내에서 서로 겹치지 않게), label(한글 라벨), " +
+    "hint(입력 예시나 설명, 없으면 빈 문자열), type(text/textarea/date/number 중 하나 — " +
+    "날짜는 date, 긴 서술형은 textarea, 금액·인원 등 숫자는 number, 그 외는 text)로 만들어라. " +
+    "문서 내용을 읽지 못했거나 입력 항목을 알아볼 수 없으면 fields를 빈 배열로 하고 confidence를 low로, " +
+    "note에 이유를 한 줄로 적어라. 정상적으로 항목을 뽑아냈으면 confidence는 high로 하고 note는 빈 문자열로 둬라.";
+
+  const lower = (fileName || "").toLowerCase();
+  let content;
+  if (mediaType === "application/pdf") {
+    content = [
+      { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
+      { type: "text", text: "이 문서는 회사 자체 업무 신청 양식이다. 위 지시대로 입력 항목을 뽑아라." },
+    ];
+  } else if (mediaType && mediaType.startsWith("image/")) {
+    content = [
+      { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+      { type: "text", text: "이 이미지는 회사 자체 업무 신청 양식이다. 위 지시대로 입력 항목을 뽑아라." },
+    ];
+  } else if (lower.endsWith(".docx") || lower.endsWith(".hwpx")) {
+    const text = extractZipDocumentText(base64);
+    content = text
+      ? `다음은 회사 자체 업무 신청 양식(${fileName})에서 추출한 본문 텍스트다. 위 지시대로 입력 항목을 뽑아라.\n\n${text}`
+      : `회사 자체 업무 신청 양식 파일(${fileName})에서 본문을 추출하지 못했다. fields는 빈 배열로, confidence는 low로 답해라.`;
+  } else {
+    // 구버전 .hwp(바이너리) 등 서버에서 본문 추출이 불가능한 형식 — 파일명만 참고 가능
+    content = `업로드된 파일(${fileName}, ${mediaType || "형식 불명"})은 서버에서 본문을 읽지 못하는 형식이다. ` +
+      `파일명만 참고 가능하다. fields는 빈 배열로, confidence는 low로, ` +
+      `note에 "이 파일 형식은 자동으로 읽을 수 없어요"라고 답해라.`;
+  }
+
+  const response = await client.beta.messages.create({
+    model: MODEL,
+    max_tokens: 4000,
+    system,
+    messages: [{ role: "user", content }],
+    output_config: { effort: "low", format: betaZodOutputFormat(TemplateParseZ) },
+  });
+
+  const textBlock = response.content.find((b) => b.type === "text");
+  if (!textBlock) {
+    throw new Error(`양식 분석 응답에 텍스트가 없습니다 (stop_reason: ${response.stop_reason}).`);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(textBlock.text);
+  } catch (e) {
+    throw new Error(`양식 분석 JSON 파싱 실패: ${e.message}`);
+  }
+
+  const result = TemplateParseZ.safeParse(parsed);
+  if (!result.success) {
+    throw new Error(`양식 분석 스키마 검증 실패: ${JSON.stringify(result.error.issues).slice(0, 500)}`);
+  }
+  return result.data;
+}
+
 // ---- 서버 ----
 
 function runServer(port) {
@@ -354,9 +446,32 @@ function runServer(port) {
       res.end();
       return;
     }
+    if (req.method === "POST" && req.url.startsWith("/parse-template")) {
+      let body = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk) => (body += chunk));
+      req.on("end", async () => {
+        try {
+          const payload = JSON.parse(body);
+          const apiKey = readApiKeyFromEnvFile(ENV_PATH);
+          const client = new Anthropic({ apiKey });
+          console.log(`[orchestrator] 양식 분석 시작: ${payload.fileName || ""}`);
+          const result = await parseTemplate(client, payload);
+          console.log(`[orchestrator] 양식 분석 완료: 항목 ${result.fields.length}개 (confidence: ${result.confidence})`);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(result));
+        } catch (error) {
+          console.error("[orchestrator]", describeError(error));
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: describeError(error) }));
+        }
+      });
+      return;
+    }
+
     if (req.method !== "POST" || !req.url.startsWith("/run")) {
       res.writeHead(404, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "POST /run 만 받습니다." }));
+      res.end(JSON.stringify({ error: "POST /run 또는 POST /parse-template 만 받습니다." }));
       return;
     }
 
