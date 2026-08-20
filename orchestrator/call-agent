@@ -115,6 +115,24 @@ function formatBudgetRule(rule) {
 }
 
 function buildPlanInput(form) {
+  if (form.customForm) {
+    // 자사 양식 경로: 표준 필드에 매핑하지 않고, 양식이 요구한 항목을 그대로 전달한다.
+    // plan 에이전트가 이미 "항목이 충분한지" 스스로 판단해 부족하면 요청/반려하므로
+    // 별도 스키마 매핑 없이도 그대로 동작한다.
+    const answers = (form.customFormAnswers || [])
+      .filter((a) => a.value && a.value.trim())
+      .map((a) => `${a.label}: ${a.value}`)
+      .join("\n");
+    return [
+      section("자사 양식 입력 내용 (사용자가 회사 자체 양식에 채운 값 그대로)", answers),
+      section("출장비 규정 (화면 경비 기준 설정값, 그대로 적용)", formatBudgetRule(form.budgetRule)),
+      section("추가 설명", form.customFormFreeText),
+      section("작성자", form.author),
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
   return [
     section("출장 목적", form.purpose),
     section(
@@ -362,20 +380,14 @@ function describeError(error) {
 
 // ---- 자사 양식 파싱 (시작화면 "자사 양식 넣기") ----
 
-// 자사 양식에서 읽어낸 값을 화면의 표준 입력 항목(기본양식과 동일한 필드)에 그대로 채운다.
-const TemplateVisitZ = z.object({ name: z.string(), address: z.string() });
+const TemplateFieldZ = z.object({
+  id: z.string(),
+  label: z.string(),
+  hint: z.string(),
+  type: z.enum(["text", "textarea", "date", "number"]),
+});
 const TemplateParseZ = z.object({
-  taskType: z.string(),
-  region: z.string(),
-  startDate: z.string(),
-  endDate: z.string(),
-  people: z.string(),
-  budget: z.string(),
-  purpose: z.string(),
-  visits: z.array(TemplateVisitZ),
-  conditions: z.string(),
-  projectName: z.string(),
-  author: z.string(),
+  fields: z.array(TemplateFieldZ),
   confidence: z.enum(["high", "low"]),
   note: z.string(),
 });
@@ -400,38 +412,35 @@ function extractZipDocumentText(base64) {
 
 async function parseTemplate(client, { fileName, mediaType, base64 }) {
   const system =
-    "너는 회사 자체 업무/출장 신청 양식을 읽어서, 아래 정해진 표준 항목에 값을 채워 넣는 담당이다. " +
-    "항목: taskType(반드시 \"출장\"·\"외근\"·\"기타\" 중 하나만, 애매하면 빈 문자열), region(지역), " +
-    "startDate·endDate(YYYY-MM-DD 형식, 모르면 빈 문자열), people(총 인원 수, 숫자만), " +
-    "budget(예산 금액, 숫자만·콤마 없이), purpose(출장·업무 목적), " +
-    "visits(방문 대상 목록 — 각 {name, address}, 주소를 모르면 address는 빈 문자열), " +
-    "conditions(숙소·일정 조건 등 참고사항, 자유 서술), projectName(사업명/기관명), author(작성자). " +
-    "양식에 없거나 알 수 없는 항목은 빈 문자열(또는 빈 배열)로 두고, 없는 값을 지어내지 마라. " +
-    "안내문·서명란·직인란·예시 문구는 값으로 넣지 마라. " +
-    "문서 내용을 하나도 읽지 못했으면 모든 항목을 비우고 confidence를 low로, note에 이유를 한 줄로 적어라. " +
-    "일부라도 읽어서 채웠으면 confidence는 high로 하고 note는 빈 문자열로 둬라.";
+    "너는 회사 자체 업무/출장 신청 양식에서 사용자가 실제로 채워야 하는 입력 항목만 뽑아내는 담당이다. " +
+    "안내문·서명란·직인란·예시 문구는 항목으로 넣지 마라. " +
+    "각 항목은 id(영문 소문자·숫자·언더스코어, 문서 내에서 서로 겹치지 않게), label(회사 양식에 실제로 적힌 항목명 그대로), " +
+    "hint(입력 예시나 설명, 없으면 빈 문자열), type(text/textarea/date/number 중 하나 — " +
+    "날짜는 date, 긴 서술형은 textarea, 금액·인원 등 숫자는 number, 그 외는 text)로 만들어라. " +
+    "문서 내용을 읽지 못했거나 입력 항목을 알아볼 수 없으면 fields를 빈 배열로 하고 confidence를 low로, " +
+    "note에 이유를 한 줄로 적어라. 정상적으로 항목을 뽑아냈으면 confidence는 high로 하고 note는 빈 문자열로 둬라.";
 
   const lower = (fileName || "").toLowerCase();
   let content;
   if (mediaType === "application/pdf") {
     content = [
       { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
-      { type: "text", text: "이 문서는 회사 자체 업무 신청 양식이다. 위 지시대로 표준 항목에 값을 채워라." },
+      { type: "text", text: "이 문서는 회사 자체 업무 신청 양식이다. 위 지시대로 입력 항목을 뽑아라." },
     ];
   } else if (mediaType && mediaType.startsWith("image/")) {
     content = [
       { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
-      { type: "text", text: "이 이미지는 회사 자체 업무 신청 양식이다. 위 지시대로 표준 항목에 값을 채워라." },
+      { type: "text", text: "이 이미지는 회사 자체 업무 신청 양식이다. 위 지시대로 입력 항목을 뽑아라." },
     ];
   } else if (lower.endsWith(".docx") || lower.endsWith(".hwpx")) {
     const text = extractZipDocumentText(base64);
     content = text
-      ? `다음은 회사 자체 업무 신청 양식(${fileName})에서 추출한 본문 텍스트다. 위 지시대로 표준 항목에 값을 채워라.\n\n${text}`
-      : `회사 자체 업무 신청 양식 파일(${fileName})에서 본문을 추출하지 못했다. 모든 항목을 비우고, confidence는 low로 답해라.`;
+      ? `다음은 회사 자체 업무 신청 양식(${fileName})에서 추출한 본문 텍스트다. 위 지시대로 입력 항목을 뽑아라.\n\n${text}`
+      : `회사 자체 업무 신청 양식 파일(${fileName})에서 본문을 추출하지 못했다. fields는 빈 배열로, confidence는 low로 답해라.`;
   } else {
     // 구버전 .hwp(바이너리) 등 서버에서 본문 추출이 불가능한 형식 — 파일명만 참고 가능
     content = `업로드된 파일(${fileName}, ${mediaType || "형식 불명"})은 서버에서 본문을 읽지 못하는 형식이다. ` +
-      `파일명만 참고 가능하다. 모든 항목을 비우고, confidence는 low로, ` +
+      `파일명만 참고 가능하다. fields는 빈 배열로, confidence는 low로, ` +
       `note에 "이 파일 형식은 자동으로 읽을 수 없어요"라고 답해라.`;
   }
 
@@ -486,7 +495,7 @@ function runServer(port) {
           const client = new Anthropic({ apiKey });
           console.log(`[orchestrator] 양식 분석 시작: ${payload.fileName || ""}`);
           const result = await parseTemplate(client, payload);
-          console.log(`[orchestrator] 양식 분석 완료 (confidence: ${result.confidence})`);
+          console.log(`[orchestrator] 양식 분석 완료: 항목 ${result.fields.length}개 (confidence: ${result.confidence})`);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(result));
         } catch (error) {
