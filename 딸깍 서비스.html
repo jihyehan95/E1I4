@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
-<title>FlowPilot AI Prototype</title>
+<title>딸깍 AI</title>
 <!-- [추가] 지도(핀+동선)용 Leaflet - API 키 불필요 -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
@@ -71,28 +71,17 @@
       margin:0 auto;
     }
     .hero{
-      background:linear-gradient(135deg,#111827,#1f2937);
-      color:#fff;
+      background:var(--panel);
+      border:1px solid var(--line);
+      color:var(--text);
       border-radius:22px;
       padding:30px 32px;
       box-shadow:var(--shadow);
       margin-bottom:24px;
+      text-align:center;
     }
-    .hero h1{margin:0 0 10px;font-size:30px}
-    .hero p{margin:0;color:#d1d5db;line-height:1.6}
-    .steps{
-      display:flex;
-      gap:12px;
-      flex-wrap:wrap;
-      margin-top:20px;
-    }
-    .step{
-      background:rgba(255,255,255,.08);
-      border:1px solid rgba(255,255,255,.12);
-      border-radius:999px;
-      padding:9px 14px;
-      font-size:14px;
-    }
+    .hero-logo{max-width:420px;width:100%;height:auto;display:block;margin:0 auto 14px}
+    .hero p{margin:0;color:var(--muted);line-height:1.6}
     .grid{
       display:grid;
       grid-template-columns:repeat(12,1fr);
@@ -106,6 +95,8 @@
       padding:22px;
     }
     .card h2,.card h3{margin-top:0}
+    #budgetRuleCard{margin-bottom:24px}
+    #budgetRuleCard h2{font-size:16px}
     .input-card{grid-column:1/-1}
     .agent-card{grid-column:span 7}
     .results-card{grid-column:span 12}
@@ -151,7 +142,22 @@
       gap:8px;
     }
     .visit-add-row input{flex:1}
-    .visit-add-btn{margin-left:0;margin-top:0;white-space:nowrap}
+    .visit-add-btn{margin-left:0;white-space:nowrap}
+    .visit-entry-grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));
+      gap:10px;
+    }
+    .visit-field-label{display:block;font-size:11px;color:var(--muted);font-weight:700;margin-bottom:4px}
+    .visit-search-wrap{position:relative}
+    .visit-search-results{
+      position:absolute;left:0;right:0;top:100%;margin-top:4px;
+      background:#fff;border:1px solid var(--line);border-radius:10px;
+      box-shadow:var(--shadow);max-height:220px;overflow-y:auto;z-index:20;
+    }
+    .visit-search-results div{padding:9px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--line)}
+    .visit-search-results div:last-child{border-bottom:0}
+    .visit-search-results div:hover{background:var(--primary-soft)}
     .visit-list{
       margin-top:10px;
       display:flex;
@@ -169,6 +175,7 @@
       padding:9px 12px;
       font-size:13px;
     }
+    .visit-item-detail{font-size:12px;color:var(--muted);margin-top:2px}
     .visit-item button{
       border:0;
       background:transparent;
@@ -738,15 +745,24 @@
 <div class="app">
 <main>
 <section class="hero">
-<h1>FlowPilot AI · 범용 현장업무 운영 Agent</h1>
+<img class="hero-logo" src="logo.png" alt="딸깍 AI 로고"/>
 <p>업무 하나만 입력하면 5개 Agent가 순서대로 협업해 장소·경로·일정·경비·문서를 한 번에 완성합니다.</p>
-<div class="steps">
-<div class="step">① 요청 구조화</div>
-<div class="step">② 장소/경로 계산</div>
-<div class="step">③ 일정 생성</div>
-<div class="step">④ 경비 검토</div>
-<div class="step">⑤ 최종 문서 작성</div>
+</section>
+<section class="card" id="budgetRuleCard">
+<div style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:12px" onclick="toggleBudgetRuleCard()">
+<div>
+<h2 style="margin:0 0 4px">💰 경비 기준 설정</h2>
+<p class="muted" id="budgetRuleSummary" style="margin:0;font-size:13px"></p>
 </div>
+<span id="budgetRuleToggleIcon" class="muted" style="font-size:13px;white-space:nowrap">펼치기 ▾</span>
+</div>
+<div class="field-grid" id="budgetRuleFields" style="display:none;margin-top:14px" onclick="event.stopPropagation()">
+<div><label>식비 (인당 1회)</label><input id="ruleMeal" type="number" oninput="saveBudgetRule()"/></div>
+<div><label>다과비 (인당 1회)</label><input id="ruleSnack" type="number" oninput="saveBudgetRule()"/></div>
+<div><label>숙박비 (인당 1박)</label><input id="ruleLodging" type="number" oninput="saveBudgetRule()"/></div>
+<div><label>교통비</label><input id="ruleTransport" type="text" oninput="saveBudgetRule()"/></div>
+</div>
+<p class="muted" style="font-size:11px;margin:10px 0 0;display:none" id="budgetRuleHint">회사 내규상 경비 기준이에요. 여기서 설정한 값이 예산 계산에 그대로 쓰입니다. 이 브라우저에만 저장돼요.</p>
 </section>
 <section class="card" id="startScreen">
 <h2>어떤 양식으로 시작할까요?</h2>
@@ -766,7 +782,10 @@
 </section>
 <section class="grid screen-hidden" id="mainGrid">
 <div class="card input-card">
-<h2>업무 Input</h2>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+<h2 style="margin:0">업무 Input</h2>
+<button type="button" class="btn secondary" style="margin:0" onclick="backToStartScreen()">← 양식 다시 선택</button>
+</div>
 <div class="field-grid" id="defaultFormFields">
 <div>
 <label>업무 유형</label>
@@ -801,11 +820,27 @@
 <textarea id="purpose" placeholder="예: OO 지원사업 대상 시설 현장심사 및 견적 산출"></textarea>
 </div>
 <div class="full">
-<label>방문 대상</label>
-<div class="visit-add-row">
-<input type="text" id="visitInput" placeholder="장소명 - 주소 (예: OO기관 - 서울시 종로구 세종대로 1)" onkeydown="if(event.key==='Enter'){event.preventDefault();addVisit();}"/>
-<button type="button" class="btn secondary visit-add-btn" onclick="addVisit()">추가</button>
+<label>주요 방문 대상</label>
+<div class="visit-entry-grid">
+<div class="visit-search-wrap">
+<label class="visit-field-label">장소명 검색</label>
+<input type="text" id="visitNameInput" placeholder="예: 부산대학교" autocomplete="off" oninput="searchVisitPlace()" onblur="setTimeout(hideVisitSearchResults, 150)"/>
+<div class="visit-search-results" id="visitSearchResults" style="display:none"></div>
 </div>
+<div>
+<label class="visit-field-label">주소</label>
+<input type="text" id="visitAddressInput" placeholder="검색해서 선택하면 자동 입력"/>
+</div>
+<div>
+<label class="visit-field-label">방문일</label>
+<input type="date" id="visitDateInput"/>
+</div>
+<div>
+<label class="visit-field-label">방문시간</label>
+<input type="time" id="visitTimeInput"/>
+</div>
+</div>
+<button type="button" class="btn secondary visit-add-btn" style="margin-top:10px" onclick="addVisit()">추가</button>
 <div class="visit-list" id="visitList"></div>
 <textarea id="visits" style="display:none"></textarea>
 </div>
@@ -814,7 +849,7 @@
 <textarea id="conditions" placeholder="예: 숙소 위치, 점심 시간, 방문 순서 조건, 요청하는 산출물 등"></textarea>
 </div>
 </div>
-<div id="customFormFields" style="display:none">
+<div id="customUploadStep" style="display:none">
 <div class="full">
 <label>자사 양식 업로드</label>
 <div class="dropzone" id="templateDropzone" onclick="document.getElementById('customTemplateFile').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="handleTemplateDrop(event)">
@@ -825,15 +860,6 @@
 <input type="file" id="customTemplateFile" accept=".pdf,.png,.jpg,.jpeg,.docx,.hwp,.hwpx" style="display:none" onchange="handleCustomTemplateChange(event)"/>
 <button type="button" class="btn" id="parseTemplateBtn" style="margin-top:10px" onclick="startCustomTemplateParse()" disabled>입력 시작하기</button>
 <p class="parse-status" id="parseStatus"></p>
-</div>
-<div class="field-grid" id="dynamicFieldGrid"></div>
-<div class="full" id="dynamicFreeTextWrap" style="display:none;margin-top:14px">
-<label>추가 내용 (AI가 못 읽은 항목은 여기에 적어주세요)</label>
-<textarea id="dynamicFreeText" placeholder="자동으로 인식하지 못한 항목이나 보충 설명을 자유롭게 적어주세요"></textarea>
-</div>
-<div class="full" id="dynamicAuthorWrap" style="display:none;margin-top:14px">
-<label>작성자</label>
-<input type="text" id="dynamicAuthor" value="주OO"/>
 </div>
 </div>
 <button class="btn" onclick="runPrototype()">AI 업무 계획 생성</button>
@@ -897,12 +923,18 @@ function formatMoneyInput(el) {
   el.value = digits ? Number(digits).toLocaleString("ko-KR") : "";
 }
 
-// ── 방문 대상: 한 곳씩 입력→추가하는 목록 UI (내부적으로는 숨겨진 textarea#visits에 동기화) ──
-let visitItems = [];
+// ── 주요 방문 대상: 장소명(검색)+주소+방문일+방문시간을 한 곳씩 입력→추가 (숨겨진 textarea#visits에 동기화) ──
+let visitItems = []; // [{ name, address, date, time }]
 
 function syncVisitsField() {
   const field = document.getElementById("visits");
-  if (field) field.value = visitItems.join("\n");
+  if (!field) return;
+  field.value = visitItems.map(v => {
+    let line = v.name;
+    if (v.address) line += ` - ${v.address}`;
+    if (v.date || v.time) line += ` (${[v.date, v.time].filter(Boolean).join(" ")})`;
+    return line;
+  }).join("\n");
 }
 
 function renderVisitList() {
@@ -910,21 +942,38 @@ function renderVisitList() {
   if (!list) return;
   list.innerHTML = visitItems.length
     ? visitItems.map((v, i) => `
-        <div class="visit-item"><span>${esc(v)}</span><button type="button" onclick="removeVisit(${i})" aria-label="삭제">×</button></div>
+        <div class="visit-item">
+          <div>
+            <span>${esc(v.name)}${v.address ? ' - ' + esc(v.address) : ''}</span>
+            ${(v.date || v.time) ? `<div class="visit-item-detail">${esc(v.date || '날짜 미정')} ${esc(v.time || '')}</div>` : ''}
+          </div>
+          <button type="button" onclick="removeVisit(${i})" aria-label="삭제">×</button>
+        </div>
       `).join("")
-    : `<p class="visit-empty">아직 추가된 장소가 없어요. 위 입력창에 "장소명 - 주소"를 쓰고 추가를 눌러주세요.</p>`;
+    : `<p class="visit-empty">아직 추가된 방문 대상이 없어요. 장소명을 검색하고 방문일·시간을 입력한 뒤 추가를 눌러주세요.</p>`;
   syncVisitsField();
 }
 
 function addVisit() {
-  const input = document.getElementById("visitInput");
-  if (!input) return;
-  const value = input.value.trim();
-  if (!value) return;
-  visitItems.push(value);
-  input.value = "";
+  const nameInput = document.getElementById("visitNameInput");
+  const addressInput = document.getElementById("visitAddressInput");
+  const dateInput = document.getElementById("visitDateInput");
+  const timeInput = document.getElementById("visitTimeInput");
+  const name = nameInput?.value.trim();
+  if (!name) return;
+  visitItems.push({
+    name,
+    address: addressInput?.value.trim() || "",
+    date: dateInput?.value || "",
+    time: timeInput?.value || "",
+  });
+  nameInput.value = "";
+  if (addressInput) addressInput.value = "";
+  if (dateInput) dateInput.value = "";
+  if (timeInput) timeInput.value = "";
+  hideVisitSearchResults();
   renderVisitList();
-  input.focus();
+  nameInput.focus();
 }
 
 function removeVisit(index) {
@@ -932,29 +981,72 @@ function removeVisit(index) {
   renderVisitList();
 }
 
-// ── 시작화면: 기본양식 / 자사양식 선택 ──
-let USING_CUSTOM_FORM = false;
+// ── 장소명 검색(OpenStreetMap Nominatim, 키 불필요) → 주소 선택 ──
+let visitSearchTimer = null;
+let visitSearchResultList = [];
 
+function searchVisitPlace() {
+  clearTimeout(visitSearchTimer);
+  const q = document.getElementById("visitNameInput")?.value.trim();
+  if (!q || q.length < 2) { hideVisitSearchResults(); return; }
+  visitSearchTimer = setTimeout(async () => {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&accept-language=ko&q=${encodeURIComponent(q)}`);
+      const list = await res.json();
+      renderVisitSearchResults(Array.isArray(list) ? list : []);
+    } catch {
+      // 검색 API 실패해도 주소는 직접 입력할 수 있으니 조용히 무시한다.
+      hideVisitSearchResults();
+    }
+  }, 400);
+}
+
+function renderVisitSearchResults(list) {
+  visitSearchResultList = list;
+  const results = document.getElementById("visitSearchResults");
+  if (!results) return;
+  if (!list.length) { results.style.display = "none"; results.innerHTML = ""; return; }
+  results.innerHTML = list.map((item, i) => `<div onmousedown="selectVisitPlace(${i})">${esc(item.display_name)}</div>`).join("");
+  results.style.display = "";
+}
+
+function selectVisitPlace(i) {
+  const item = visitSearchResultList[i];
+  if (!item) return;
+  const addressInput = document.getElementById("visitAddressInput");
+  if (addressInput) addressInput.value = item.display_name;
+  hideVisitSearchResults();
+}
+
+function hideVisitSearchResults() {
+  const results = document.getElementById("visitSearchResults");
+  if (results) { results.style.display = "none"; results.innerHTML = ""; }
+}
+
+// ── 시작화면: 기본양식 / 자사양식 선택 ──
 function chooseDefaultForm() {
   document.getElementById("startScreen").classList.add("screen-hidden");
   document.getElementById("mainGrid").classList.remove("screen-hidden");
   document.getElementById("defaultFormFields").style.display = "";
-  document.getElementById("customFormFields").style.display = "none";
-  USING_CUSTOM_FORM = false;
+  document.getElementById("customUploadStep").style.display = "none";
 }
 
 function chooseCustomForm() {
   document.getElementById("startScreen").classList.add("screen-hidden");
   document.getElementById("mainGrid").classList.remove("screen-hidden");
   document.getElementById("defaultFormFields").style.display = "none";
-  document.getElementById("customFormFields").style.display = "";
-  USING_CUSTOM_FORM = true;
+  document.getElementById("customUploadStep").style.display = "";
 }
 
-// ── 자사 양식 업로드 → AI 파싱 → 입력칸 자동 생성 ──
+function backToStartScreen() {
+  document.getElementById("mainGrid").classList.add("screen-hidden");
+  document.getElementById("startScreen").classList.remove("screen-hidden");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// ── 자사 양식 업로드 → AI가 읽어서 "업무 Input"(기본양식과 같은 항목)에 미리 채워줌 ──
 const TEMPLATE_PARSE_ENDPOINT = "http://localhost:8788/parse-template";
 let customTemplateFile = null; // { name, mediaType, base64 }
-let customParsedFields = [];
 
 function handleCustomTemplateChange(event) {
   const file = event.target.files[0];
@@ -984,6 +1076,41 @@ function handleTemplateDrop(event) {
   handleCustomTemplateChange({ target: input });
 }
 
+// AI가 읽어낸 값을 기본양식과 같은 입력 항목(taskType/region/...)에 그대로 채운다.
+function applyParsedFieldsToDefaultForm(parsed) {
+  const setValue = (id, value) => {
+    const el = document.getElementById(id);
+    if (el && value) el.value = value;
+  };
+  const taskTypeEl = document.getElementById("taskType");
+  if (taskTypeEl && parsed.taskType && [...taskTypeEl.options].some(o => o.value === parsed.taskType)) {
+    taskTypeEl.value = parsed.taskType;
+  }
+  setValue("region", parsed.region);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(parsed.startDate || "")) setValue("startDate", parsed.startDate);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(parsed.endDate || "")) setValue("endDate", parsed.endDate);
+  if (/^\d+$/.test(parsed.people || "")) setValue("people", parsed.people);
+  if (/^\d+$/.test(parsed.budget || "")) {
+    const budgetEl = document.getElementById("budget");
+    if (budgetEl) budgetEl.value = Number(parsed.budget).toLocaleString("ko-KR");
+  }
+  setValue("purpose", parsed.purpose);
+  setValue("conditions", parsed.conditions);
+  setValue("projectName", parsed.projectName);
+  setValue("author", parsed.author);
+
+  (parsed.visits || []).forEach(v => {
+    if (!v.name) return;
+    visitItems.push({ name: v.name, address: v.address || "", date: "", time: "" });
+  });
+  renderVisitList();
+}
+
+function showDefaultFormForCustomFlow() {
+  document.getElementById("customUploadStep").style.display = "none";
+  document.getElementById("defaultFormFields").style.display = "";
+}
+
 async function startCustomTemplateParse() {
   if (!customTemplateFile) return;
   const btn = document.getElementById("parseTemplateBtn");
@@ -1003,50 +1130,79 @@ async function startCustomTemplateParse() {
     });
     const payload = await res.json();
     if (!res.ok || payload.error) throw new Error(payload.error || `서버 오류 (${res.status})`);
-    renderDynamicFields(payload.fields || [], payload.confidence, payload.note);
+    applyParsedFieldsToDefaultForm(payload);
+    showDefaultFormForCustomFlow();
+    if (status) {
+      status.className = payload.confidence === "low" ? "parse-status warn" : "parse-status ok";
+      status.textContent = payload.confidence === "low"
+        ? `⚠ 일부만 인식했어요${payload.note ? `: ${payload.note}` : ""}. 아래 업무 Input에서 나머지를 직접 채워주세요.`
+        : "✅ 양식을 읽어서 아래 업무 Input에 채워 넣었어요. 확인하고 필요하면 수정해 주세요.";
+    }
   } catch (err) {
     if (status) {
       status.className = "parse-status warn";
-      status.textContent = `양식을 읽지 못했어요: ${err.message} (터미널에서 node orchestrator/call-agent --serve 를 켰는지 확인해 주세요.) 아래에서 직접 입력해 주세요.`;
+      status.textContent = `양식을 읽지 못했어요: ${err.message} (터미널에서 node orchestrator/call-agent --serve 를 켰는지 확인해 주세요.) 아래 업무 Input에서 직접 입력해 주세요.`;
     }
-    renderDynamicFields([], "low", "");
+    showDefaultFormForCustomFlow();
   } finally {
     if (btn) btn.disabled = false;
   }
 }
 
-function renderDynamicFields(fields, confidence, note) {
-  customParsedFields = fields;
-  const grid = document.getElementById("dynamicFieldGrid");
-  if (grid) {
-    grid.innerHTML = fields.map(f => `
-      <div class="${f.type === 'textarea' ? 'full' : ''}">
-        <label>${esc(f.label)}</label>
-        ${f.type === "textarea"
-          ? `<textarea id="dyn_${esc(f.id)}" placeholder="${esc(f.hint || "")}"></textarea>`
-          : `<input id="dyn_${esc(f.id)}" type="${f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text'}" placeholder="${esc(f.hint || "")}"/>`}
-      </div>
-    `).join("");
-  }
+renderVisitList();
 
-  const status = document.getElementById("parseStatus");
-  if (status) {
-    if (confidence === "low" || !fields.length) {
-      status.className = "parse-status warn";
-      status.textContent = note
-        ? `⚠ 일부만 인식했어요: ${note} 아래에서 직접 채우거나 추가 내용에 적어주세요.`
-        : "⚠ 양식에서 입력 항목을 거의 찾지 못했어요. 아래 추가 내용에 직접 적어주세요.";
-    } else {
-      status.className = "parse-status ok";
-      status.textContent = `✅ ${fields.length}개 항목을 인식했어요. 확인하고 채워주세요.`;
-    }
-  }
+// ── 경비 기준 설정(회사 내규상 인당 한도) — 이 브라우저에 저장, 예산 계산에 그대로 반영 ──
+const BUDGET_RULE_KEY = "ttalkkak_budget_rule_v1";
+const BUDGET_RULE_DEFAULTS = { meal: 13000, snack: 7000, lodging: 100000, transport: "실비" };
 
-  document.getElementById("dynamicFreeTextWrap").style.display = "";
-  document.getElementById("dynamicAuthorWrap").style.display = "";
+function loadBudgetRule() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(BUDGET_RULE_KEY) || "null");
+    return { ...BUDGET_RULE_DEFAULTS, ...(saved && typeof saved === "object" ? saved : {}) };
+  } catch {
+    return { ...BUDGET_RULE_DEFAULTS };
+  }
 }
 
-renderVisitList();
+function renderBudgetRuleSummary(rule) {
+  const el = document.getElementById("budgetRuleSummary");
+  if (!el) return;
+  el.textContent = `식비 ${Number(rule.meal || 0).toLocaleString()}원 · 다과비 ${Number(rule.snack || 0).toLocaleString()}원 · 숙박비 ${Number(rule.lodging || 0).toLocaleString()}원 (인당) · 교통비 ${rule.transport || "-"}`;
+}
+
+function saveBudgetRule() {
+  const rule = {
+    meal: Number(document.getElementById("ruleMeal")?.value) || 0,
+    snack: Number(document.getElementById("ruleSnack")?.value) || 0,
+    lodging: Number(document.getElementById("ruleLodging")?.value) || 0,
+    transport: document.getElementById("ruleTransport")?.value || "",
+  };
+  localStorage.setItem(BUDGET_RULE_KEY, JSON.stringify(rule));
+  renderBudgetRuleSummary(rule);
+  return rule;
+}
+
+function toggleBudgetRuleCard() {
+  const fields = document.getElementById("budgetRuleFields");
+  const hint = document.getElementById("budgetRuleHint");
+  const icon = document.getElementById("budgetRuleToggleIcon");
+  if (!fields) return;
+  const open = fields.style.display !== "none";
+  fields.style.display = open ? "none" : "";
+  if (hint) hint.style.display = open ? "none" : "";
+  if (icon) icon.textContent = open ? "펼치기 ▾" : "접기 ▴";
+}
+
+function initBudgetRuleCard() {
+  const rule = loadBudgetRule();
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set("ruleMeal", rule.meal);
+  set("ruleSnack", rule.snack);
+  set("ruleLodging", rule.lodging);
+  set("ruleTransport", rule.transport);
+  renderBudgetRuleSummary(rule);
+}
+initBudgetRuleCard();
 
 function esc(value) {
   return String(value ?? "")
@@ -1070,10 +1226,21 @@ function parseVisits(text) {
     .map(v => v.trim())
     .filter(Boolean)
     .map((line, idx) => {
-      let name = line;
+      let rest = line;
+      let date = "", time = "";
+      const dtMatch = rest.match(/\(([^)]*)\)\s*$/);
+      if (dtMatch) {
+        rest = rest.slice(0, dtMatch.index).trim();
+        dtMatch[1].trim().split(/\s+/).forEach(tok => {
+          if (/^\d{4}-\d{2}-\d{2}$/.test(tok)) date = tok;
+          else if (/^\d{1,2}:\d{2}$/.test(tok)) time = tok;
+        });
+      }
+
+      let name = rest;
       let address = "";
-      if (line.includes(" - ")) {
-        const parts = line.split(" - ");
+      if (rest.includes(" - ")) {
+        const parts = rest.split(" - ");
         name = parts.shift().trim();
         address = parts.join(" - ").trim();
       }
@@ -1082,7 +1249,8 @@ function parseVisits(text) {
         type: "현장",
         name,
         address: address || "주소 미입력",
-        work: "현장 확인 및 업무 수행"
+        work: "현장 확인 및 업무 수행",
+        date, time
       };
     });
 }
@@ -1098,28 +1266,24 @@ function parseConditions(text) {
   return result;
 }
 
-function buildBudgetRows(totalBudget) {
-  const total = Math.max(0, Number(totalBudget) || 0);
-
-  // Prototype-only breakdown: uses fixed percentages solely to show a reference-style table.
-  const ratios = [
-    ["숙박비", 0.25],
-    ["장거리 교통비", 0.25],
-    ["현지 교통비", 0.10],
-    ["식사비", 0.25],
-    ["기타/다과비", 0.15]
-  ];
-
-  let used = 0;
-  return ratios.map((item, idx) => {
-    let amount;
-    if (idx === ratios.length - 1) amount = total - used;
-    else {
-      amount = Math.round(total * item[1] / 1000) * 1000;
-      used += amount;
-    }
-    return { name: item[0], amount };
-  });
+// 경비 기준 설정(인당 한도)과 인원·기간으로 실제 경비를 근사 계산한다.
+// 교통비는 "실비"(케이스마다 다름)라 자동 계산하지 않고 항목만 표시한다.
+function buildBudgetRowsFromRule(rule, people, nights, days) {
+  const p = Math.max(0, Number(people) || 0);
+  const n = Math.max(0, Number(nights) || 0);
+  const d = Math.max(0, Number(days) || 0);
+  const rows = [];
+  if (rule.lodging && n) {
+    rows.push({ name: "숙박비", amount: rule.lodging * p * n, formula: `${Number(rule.lodging).toLocaleString()}원×${p}명×${n}박(설정값)` });
+  }
+  if (rule.meal && d) {
+    rows.push({ name: "식비", amount: rule.meal * p * d, formula: `${Number(rule.meal).toLocaleString()}원×${p}명×${d}일(설정값, 1일 1회 근사)` });
+  }
+  if (rule.snack && d) {
+    rows.push({ name: "다과비", amount: rule.snack * p * d, formula: `${Number(rule.snack).toLocaleString()}원×${p}명×${d}일(설정값, 1일 1회 근사)` });
+  }
+  rows.push({ name: "교통비", amount: 0, formula: `${rule.transport || "실비"} — 실제 영수증 기준이라 자동 계산 안 됨` });
+  return rows;
 }
 
 function daysBetween(start, end) {
@@ -1151,28 +1315,42 @@ function buildFallbackData() {
   const routeVisits = [];
   const scheduleRows = [];
   let hour = 9, minute = 0;
+  let lastPrintedDate = "";
   const pad = (n) => String(n).padStart(2, "0");
 
+  // 방문일이 입력된 경우, 등장하는 날짜 순서대로 1일차·2일차...로 묶는다(지도 동선 색 구분용).
+  const visitDates = [...new Set(visits.map(v => v.date || startDate).filter(Boolean))].sort();
+  const dayIndexByDate = new Map(visitDates.map((d, i) => [d, i + 1]));
+
   visits.forEach((v, i) => {
-    const moveFromPrev = i === 0 ? "-" : "차량이동 약 30분(추정)";
+    const visitDate = v.date || startDate;
+    // 방문시간을 직접 입력했으면 그 시간을 그대로 쓰고, 아니면 직전 방문 뒤 이동시간만큼 이어서 추정한다.
+    if (v.time && /^\d{1,2}:\d{2}$/.test(v.time)) {
+      const [h, m] = v.time.split(":").map(Number);
+      hour = h; minute = m;
+    } else if (i > 0) {
+      minute += 30;
+      if (minute >= 60) { hour += Math.floor(minute / 60); minute %= 60; }
+    }
+
+    const moveFromPrev = i === 0 ? "-" : (v.time ? "차량이동(요청 시간 기준)" : "차량이동 약 30분(추정)");
     routeVisits.push({
-      no: v.no, day: 1, type: v.type, name: v.name, address: v.address,
+      no: v.no, day: dayIndexByDate.get(visitDate) || 1, type: v.type, name: v.name, address: v.address,
       moveFromPrev, arrive: `${pad(hour)}:${pad(minute)}`, excluded: false, lat: null, lng: null
     });
 
     const startH = pad(hour), startM = pad(minute);
-    minute += 40;
-    if (minute >= 60) { hour += Math.floor(minute / 60); minute %= 60; }
+    let endHour = hour, endMinute = minute + 40;
+    if (endMinute >= 60) { endHour += Math.floor(endMinute / 60); endMinute %= 60; }
+
+    const dateLabel = formatDate(visitDate);
     scheduleRows.push({
-      date: i === 0 ? formatDate(startDate) : "",
-      time: `${startH}:${startM}-${pad(hour)}:${pad(minute)}`,
+      date: dateLabel !== lastPrintedDate ? dateLabel : "",
+      time: `${startH}:${startM}-${pad(endHour)}:${pad(endMinute)}`,
       place: v.name, work: v.work, move: moveFromPrev, dwell: "40분(추정)", state: "ok"
     });
-
-    if (i < visits.length - 1) {
-      minute += 30;
-      if (minute >= 60) { hour += Math.floor(minute / 60); minute %= 60; }
-    }
+    lastPrintedDate = dateLabel;
+    hour = endHour; minute = endMinute;
   });
 
   if (!visits.length) {
@@ -1185,21 +1363,27 @@ function buildFallbackData() {
     scheduleRows.push({ date: "", time: conditions.lunch, place: "점심식사", work: "", move: "-", dwell: "", state: "ok" });
   }
 
-  const budgetRows = buildBudgetRows(budget).map(r => ({ ...r, formula: "프로토타입 배분" }));
-  const total = budgetRows.reduce((sum, r) => sum + r.amount, 0);
   const nights = daysBetween(startDate, endDate);
+  const days = startDate && endDate ? nights + 1 : 0;
+  const budgetRule = loadBudgetRule();
+  const budgetRows = buildBudgetRowsFromRule(budgetRule, people, nights, days);
+  const total = budgetRows.reduce((sum, r) => sum + r.amount, 0);
 
   return {
     plan: {
       state: "ok", label: "완료",
       reason: "AI 서버 미실행 — 폼 입력만으로 만든 임시 결과입니다.",
       projectName, taskType, region,
-      period: { start: startDate, end: endDate, nights, days: startDate && endDate ? nights + 1 : 0 },
+      period: { start: startDate, end: endDate, nights, days },
       purpose, peopleTotal: people, personnel: [], budgetLimit: budget, expenseCategory: "", author, background: ""
     },
     route: { state: "ok", label: "완료", reason: "", visits: routeVisits },
     schedule: { state: "ok", label: "완료", reason: "", rows: scheduleRows },
-    budget: { state: "ok", label: "완료", reason: "", rows: budgetRows, total, budgetLimit: budget },
+    budget: {
+      state: "ok", label: "완료",
+      reason: "경비 기준 설정(인당 한도)으로 계산한 근사치입니다. 교통비는 실비라 자동 계산에서 빠졌어요.",
+      rows: budgetRows, total, budgetLimit: budget
+    },
     document: {
       state: "ok", label: "완료",
       title: `${region} ${taskType} 계획`, author, createdAt: new Date().toISOString().slice(0, 10),
@@ -1350,17 +1534,6 @@ function buildReport() {
 const ORCHESTRATOR_ENDPOINT = "http://localhost:8788/run";
 
 function readFormValues() {
-  if (USING_CUSTOM_FORM) {
-    return {
-      customForm: true,
-      customFormAnswers: customParsedFields.map(f => ({
-        label: f.label,
-        value: document.getElementById(`dyn_${f.id}`)?.value || "",
-      })),
-      customFormFreeText: document.getElementById("dynamicFreeText")?.value || "",
-      author: document.getElementById("dynamicAuthor")?.value || "",
-    };
-  }
   return {
     taskType: document.getElementById("taskType")?.value || "",
     region: document.getElementById("region")?.value || "",
@@ -1373,6 +1546,7 @@ function readFormValues() {
     conditions: document.getElementById("conditions")?.value || "",
     projectName: document.getElementById("projectName")?.value || "",
     author: document.getElementById("author")?.value || "",
+    budgetRule: loadBudgetRule(),
   };
 }
 
