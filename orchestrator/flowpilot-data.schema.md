@@ -68,6 +68,17 @@ UI의 오피스 단계 배지(대기/실행중/…) 색과 orchestrator의 "멈�
 | --- | --- | --- |
 | `state` / `label` / `reason` | string | 공통 상태(주소 확인 불가·도착 불가 시 `reject`) |
 | `visits` | `[visit]` | 방문지 목록(동선 순서대로 정렬) |
+| `costCandidates` | `[costCandidate]` | 이 출장에 필요한 교통편·숙박·식당 후보와 예상 단가. `budget` 단계가 "예상 사용 금액" 계산에 그대로 쓴다 |
+
+`costCandidate` 객체:
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `category` | string | 구분(`"교통"` / `"숙박"` / `"식비"`) |
+| `name` | string | 후보명 |
+| `unit` | string | 단가 기준(예 `"1인 왕복"`, `"1박"`, `"1인 1식"`) |
+| `unitPrice` | number | 단가(원). 통상 시세로 추정했으면 `note`에 "(추정)" 표시 |
+| `note` | string | 비고(선택) |
 
 `visit` 객체:
 
@@ -106,11 +117,14 @@ UI의 오피스 단계 배지(대기/실행중/…) 색과 orchestrator의 "멈�
 
 ## 4. `budget` — 경비
 
+계산은 두 갈래다: **기준금액**(경비 기준 설정 — 인당 한도 규정으로 계산)과 **예상 사용 금액**(`route.costCandidates`로 계산한 실제 예상 비용). 예산 대비 판정은 예상 사용 금액 기준으로 한다.
+
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
-| `state` / `label` / `reason` | string | `ok`(가능)/`fail`(초과)/`cannot`(계산 불가) |
-| `rows` | `[{name,amount,formula}]` | 항목별 금액(원)·산출식 |
-| `total` | number | 합계(원) |
+| `state` / `label` / `reason` | string | `ok`(가능)/`fail`(초과)/`cannot`(계산 불가) — 예상 사용 금액 기준 |
+| `rows` | `[{name,ruleAmount,ruleFormula,estimatedAmount,estimatedFormula}]` | 항목별 기준금액·예상 사용 금액(원)과 각각의 산출식 |
+| `ruleTotal` | number | 기준금액 합계(원) |
+| `estimatedTotal` | number | 예상 사용 금액 합계(원) — 예산 대비 판정에 쓰는 값 |
 | `budgetLimit` | number | 예산 상한(원) — 대비 판정용 |
 
 ## 5. `document` — 문서
