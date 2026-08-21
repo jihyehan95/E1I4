@@ -62,7 +62,9 @@ const STAGE_STATES = {
 };
 
 // 진행을 멈추고 사용자 확인을 받아야 하는 상태 (schema.md 의 orchestrator 동작 열 기준)
-const HARD_STOP_STATES = new Set(["reject", "request", "fail", "cannot"]);
+// "missing"은 이 파이프라인이 붙이는 별도 상태다: 모델 응답에서 ORCH_STATE 줄을 못 찾았을 때
+// (형식을 안 지켰거나 max_tokens로 잘렸을 때) 통과로 처리하지 않고 안전하게 멈추기 위한 것.
+const HARD_STOP_STATES = new Set(["reject", "request", "fail", "cannot", "missing"]);
 
 async function callStage(client, agentName, inputText, extraBlocks = []) {
   const baseInstruction = readRoleInstruction(agentName);
@@ -70,7 +72,8 @@ async function callStage(client, agentName, inputText, extraBlocks = []) {
   const system =
     baseInstruction +
     `\n\n---\n(orchestrator 자동화용 지시 — 이 저장소의 .claude/agents/${agentName}.md 파일에는 없는, 이번 호출에만 붙이는 지시다)\n` +
-    `위 역할대로 결과를 다 작성한 뒤, 맨 마지막 줄에 아래 형식으로 한 줄만 더 추가해라. 그 줄 앞에는 아무것도 쓰지 마라.\n` +
+    `본문을 쓰기 전에, 맨 첫 줄에 아래 형식으로 한 줄을 먼저 써라. 그 줄 앞에는 아무것도 쓰지 마라. ` +
+    `역할대로 판단한 결과(예: 정보가 부족해 반려/요청해야 하는지)를 먼저 정하고 그 값을 이 줄에 쓴 뒤, 이어서 본문을 작성해라.\n` +
     `ORCH_STATE: <${allowed}>`;
 
   // extraBlocks가 있으면(예: 참고 보고서 형식 PDF/이미지) 텍스트 앞에 붙여서 함께 보낸다
@@ -90,10 +93,20 @@ async function callStage(client, agentName, inputText, extraBlocks = []) {
     .map((b) => b.text)
     .join("\n");
 
-  const stateRe = new RegExp(`ORCH_STATE:\\s*(${STAGE_STATES[agentName].join("|")})`, "i");
+  // 맨 첫 줄(앞의 공백·줄바꿈만 허용)에서만 찾는다 — 본문 중간에 우연히 같은 문구가 나와도 오인하지 않는다.
+  const stateRe = new RegExp(`^\\s*ORCH_STATE:\\s*(${STAGE_STATES[agentName].join("|")})\\s*\\n?`, "i");
   const match = raw.match(stateRe);
-  const state = match ? match[1].toLowerCase() : "ok";
-  const text = raw.replace(stateRe, "").trim();
+
+  if (!match) {
+    // 상태 줄이 없으면(형식 위반·응답 잘림 등) 통과로 넘기지 않고 멈춘다.
+    return {
+      state: "missing",
+      text: `⚠ 이 단계 응답에서 ORCH_STATE 줄을 첫 줄에서 찾지 못해, 안전을 위해 통과 처리하지 않고 멈췄습니다. (모델이 형식을 안 지켰거나 응답이 중간에 잘렸을 수 있습니다)\n\n${raw.trim()}`,
+    };
+  }
+
+  const state = match[1].toLowerCase();
+  const text = raw.slice(match[0].length).trim();
 
   return { state, text };
 }
@@ -111,6 +124,7 @@ function formatBudgetRule(rule) {
   if (rule.snack) parts.push(`다과비 인당 ${Number(rule.snack).toLocaleString()}원 이내`);
   if (rule.lodging) parts.push(`숙박비 인당 ${Number(rule.lodging).toLocaleString()}원 이내`);
   if (rule.transport) parts.push(`교통비 ${rule.transport}`);
+  if (rule.fuelRate) parts.push(`자차 이용 시 유류비 km당 ${Number(rule.fuelRate).toLocaleString()}원`);
   return parts.join(", ");
 }
 
@@ -153,9 +167,22 @@ function buildPlanInput(form) {
 }
 
 function buildRouteInput(planText, form) {
+  const rejection = form.budgetRejection;
   return (
     section("plan 결과 (출장 위치·일정)", planText) +
-    section("요청 시간", `방문 가능 기간: ${form.startDate} ~ ${form.endDate}`)
+    section("요청 시간", `방문 가능 기간: ${form.startDate} ~ ${form.endDate}`) +
+    (rejection
+      ? section(
+          "⚠ 이전 예산 검토 반려 피드백 (이번 후보를 찾을 때 반드시 반영)",
+          `이전에 이 route 단계가 찾은 후보로 계산한 "예상 사용 금액"이 예산 상한을 초과해 사람이 반려했다.\n` +
+          `반려 사유: "${rejection.reason}"\n` +
+          `예산 상한: ${Number(rejection.budgetLimit || 0).toLocaleString()}원, 이전 예상 사용 금액 합계: ${Number(rejection.previousTotal || 0).toLocaleString()}원\n` +
+          `이전에 제시했던 후보:\n${rejection.previousCandidates || "(없음)"}\n\n` +
+          `이번에는 위 반려 사유와 예산 상한을 반드시 고려해서, 더 저렴하거나 사유에 맞는 대안 후보를 다시 찾아라. ` +
+          `같은 후보를 그대로 다시 제시하지 말고, 왜 이번 후보가 더 적정한지 비고에 한 줄로 남겨라. ` +
+          `그래도 예산 상한 안에 들어오는 현실적인 대안을 못 찾겠으면 지어내지 말고, 그 사실 그대로("적정 대안 없음" 등) 표시해라.`,
+        )
+      : "")
   );
 }
 
@@ -166,10 +193,11 @@ function buildScheduleInput(routeText, planText) {
   );
 }
 
-function buildBudgetInput(scheduleText, planText, form) {
+function buildBudgetInput(scheduleText, planText, routeText, form) {
   return (
     section("schedule 결과 (일정)", scheduleText) +
     section("plan 결과 (출장비 규정·예산 상한)", planText) +
+    section("route 결과 (교통편·숙박·식당 후보와 예상 비용 — '예상 사용 금액' 계산에 그대로 쓴다)", routeText) +
     section("숙소/교통 관련 참고", form.conditions)
   );
 }
@@ -205,7 +233,20 @@ const ScheduleRowZ = z.object({
   work: z.string(),
   state: z.enum(["ok", "warn", "adjust"]),
 });
-const BudgetRowZ = z.object({ name: z.string(), amount: z.number(), formula: z.string() });
+const CostCandidateZ = z.object({
+  category: z.string(),
+  name: z.string(),
+  unit: z.string(),
+  unitPrice: z.number(),
+  note: z.string(),
+});
+const BudgetRowZ = z.object({
+  name: z.string(),
+  ruleAmount: z.number(),
+  ruleFormula: z.string(),
+  estimatedAmount: z.number(),
+  estimatedFormula: z.string(),
+});
 
 const StageCommonZ = { state: z.string(), label: z.string(), reason: z.string() };
 
@@ -227,9 +268,16 @@ const STAGE_SHAPE_BUILDERS = {
       author: z.string(),
       background: z.string(),
     }),
-  route: () => z.object({ ...StageCommonZ, visits: z.array(VisitZ) }),
+  route: () => z.object({ ...StageCommonZ, visits: z.array(VisitZ), costCandidates: z.array(CostCandidateZ) }),
   schedule: () => z.object({ ...StageCommonZ, rows: z.array(ScheduleRowZ) }),
-  budget: () => z.object({ ...StageCommonZ, rows: z.array(BudgetRowZ), total: z.number(), budgetLimit: z.number() }),
+  budget: () =>
+    z.object({
+      ...StageCommonZ,
+      rows: z.array(BudgetRowZ),
+      ruleTotal: z.number(),
+      estimatedTotal: z.number(),
+      budgetLimit: z.number(),
+    }),
   document: () =>
     z.object({
       state: z.string(),
@@ -251,7 +299,8 @@ async function aggregateStage(client, stageName, stageResult) {
   const system =
     `너는 방금 실행된 출장 파이프라인의 "${stageName}" 단계 결과를 flowpilot-data.schema.md 규격의 JSON으로 구조화하는 담당이다. ` +
     "텍스트에 있는 값만 사용해라. 텍스트에 없는 값은 지어내지 말고, 알 수 없으면 빈 문자열이나 빈 배열로 둬라. " +
-    "숫자 필드(peopleTotal, amount, total, budgetLimit 등)는 콤마를 뺀 순수 숫자로 넣어라. " +
+    "숫자 필드(peopleTotal, ruleAmount, estimatedAmount, ruleTotal, estimatedTotal, unitPrice, budgetLimit 등)는 콤마를 뺀 순수 숫자로 넣어라. " +
+    "budget 단계의 ruleAmount/ruleTotal은 '경비 기준 설정'(인당 한도 규정)으로 계산한 기준금액, estimatedAmount/estimatedTotal은 route 단계가 조사한 실제 후보로 계산한 예상 사용 금액이다 — 서로 다른 계산이니 섞지 마라. " +
     "'(추정)'이라고 표시된 값은 그 표시를 값 문자열에 그대로 남겨서, 실측값과 구분되게 해라.";
 
   const body = `### ${stageName} (state: ${stageResult.state})\n\n${stageResult.text}`;
@@ -338,7 +387,7 @@ async function runPipeline(form, onEvent = () => {}) {
 
   if (!hardStopped) {
     onEvent({ type: "stage_start", stage: "budget" });
-    const budgetInput = buildBudgetInput(completed.schedule.text, completed.plan.text, form);
+    const budgetInput = buildBudgetInput(completed.schedule.text, completed.plan.text, completed.route.text, form);
     completed.budget = await callStage(client, "budget", budgetInput);
     onEvent({ type: "stage_done", stage: "budget", state: completed.budget.state });
     if (HARD_STOP_STATES.has(completed.budget.state)) hardStopped = { stage: "budget", ...completed.budget };
