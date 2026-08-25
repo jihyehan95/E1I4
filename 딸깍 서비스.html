@@ -5,9 +5,8 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>딸깍 AI</title>
-<!-- [추가] 지도(핀+동선)용 Leaflet - API 키 불필요 -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<!-- [추가] 지도(핀+동선)는 네이버 지도 JS SDK를 쓴다. 클라이언트 ID가 있어야 로드되므로
+     스크립트 태그는 본문 하단에서 서버(/config)가 내려준 값으로 동적으로 붙인다. -->
 <style>
     :root{
       --bg:#f6f8fb;
@@ -753,6 +752,7 @@
     }
     .poke-hud .tag{font-size:11px;font-weight:800;letter-spacing:1px;color:#2563eb;text-transform:uppercase}
     .poke-hud .nm{font-size:15px;font-weight:800;color:#334155}
+    .poke-hud .pct{font-size:13px;font-weight:800;color:#2563eb;margin-top:2px;min-height:16px}
 
     /* 담당 카드(체크포인트) — 클릭 시 하단 인라인 상세 */
     .office-stage{cursor:pointer}
@@ -942,7 +942,7 @@
 <div class="card evolution-card"><h2>AI 오피스 팀이 업무를 처리하고 있어요</h2><p class="muted">담당 Agent가 순서대로 업무를 이어받아 진화하듯 처리합니다. <b>담당을 클릭하면 그 Agent가 한 일이 아래에 펼쳐져요.</b></p>
 <div class="poke-road">
   <div class="road-line"></div>
-  <div class="poke-hud"><div class="tag" id="pokeStageTag">대기 중</div><div class="nm" id="pokeName">몬스터볼</div></div>
+  <div class="poke-hud"><div class="tag" id="pokeStageTag">대기 중</div><div class="nm" id="pokeName">몬스터볼</div><div class="pct" id="pokePct"></div></div>
   <div class="actor-track" id="actorTrack"><div class="actor" id="actor"><img id="pokeImg" alt="담당 포켓몬"
     src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png"
     onerror="this.onerror=null;this.src='https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/1.png'"/></div></div>
@@ -959,12 +959,13 @@
 </main>
 </div>
 
-<!-- [추가] Leaflet (지도) -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <!-- 에이전트 파이프라인 결과 주입 (orchestrator가 생성). 없으면 아래 스크립트가 기존 데모 로직으로 폴백 -->
 <script src="flowpilot-data.js"></script>
 <script>
+const ORCHESTRATOR_BASE = "http://localhost:8788";
+const GEOCODE_ENDPOINT = `${ORCHESTRATOR_BASE}/api/geocode`;
+const CONFIG_ENDPOINT = `${ORCHESTRATOR_BASE}/config`;
+
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function setStatus(id, text, mode = "") {
@@ -1124,7 +1125,7 @@ function removeVisit(index) {
   renderVisitList();
 }
 
-// ── 장소명 검색(OpenStreetMap Nominatim, 키 불필요) → 주소 선택 ──
+// ── 장소명 검색(서버 프록시 경유 Naver Geocoding) → 주소 선택 ──
 let visitSearchTimer = null;
 let visitSearchResultList = [];
 
@@ -1140,11 +1141,11 @@ function searchVisitPlace() {
   setVisitSearchLoading(true);
   visitSearchTimer = setTimeout(async () => {
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&accept-language=ko&q=${encodeURIComponent(q)}`);
+      const res = await fetch(`${GEOCODE_ENDPOINT}?q=${encodeURIComponent(q)}`);
       const list = await res.json();
       renderVisitSearchResults(Array.isArray(list) ? list : []);
     } catch {
-      // 검색 API 실패해도 주소는 직접 입력할 수 있으니 조용히 무시한다.
+      // 검색 API 실패해도(서버 미실행 등) 주소는 직접 입력할 수 있으니 조용히 무시한다.
       hideVisitSearchResults();
     } finally {
       setVisitSearchLoading(false);
@@ -1250,12 +1251,25 @@ function backToStartScreen() {
 }
 
 // ── 자사 양식 업로드 → AI가 읽어서 "업무 Input"(기본양식과 같은 항목)에 미리 채워줌 ──
-const TEMPLATE_PARSE_ENDPOINT = "http://localhost:8788/parse-template";
+const TEMPLATE_PARSE_ENDPOINT = `${ORCHESTRATOR_BASE}/parse-template`;
+const MAX_TEMPLATE_UPLOAD_BYTES = 10 * 1024 * 1024; // 자사 양식 업로드 크기 제한: 10MB (서버도 초과 시 413으로 재확인)
 let customTemplateFile = null; // { name, mediaType, base64 }
 
 function handleCustomTemplateChange(event) {
   const file = event.target.files[0];
   if (!file) return;
+  const status = document.getElementById("parseStatus");
+  if (file.size > MAX_TEMPLATE_UPLOAD_BYTES) {
+    customTemplateFile = null;
+    event.target.value = "";
+    const nameEl = document.getElementById("customAttachName");
+    if (nameEl) nameEl.textContent = "첨부된 파일 없음";
+    const btn = document.getElementById("parseTemplateBtn");
+    if (btn) btn.disabled = true;
+    if (status) { status.className = "parse-status warn"; status.textContent = `파일이 너무 커요 (최대 10MB, 이 파일 ${(file.size / 1024 / 1024).toFixed(1)}MB).`; }
+    return;
+  }
+  if (status) { status.className = "parse-status"; status.textContent = ""; }
   const reader = new FileReader();
   reader.onload = () => {
     const base64 = String(reader.result).split(",")[1] || "";
@@ -1695,7 +1709,7 @@ function buildReportFromData(d) {
     <tr${warn ? ' style="background:#fffbeb"' : ''}>
       <td>${esc(r.date)}</td>
       <td>${esc(r.time)}</td>
-      <td>- 현장 업무(${esc(r.place)})<br><span class="note">${esc(r.work || '')}</span></td>
+      <td>- 현장 업무(${esc(r.place)})</td>
       <td>${esc(r.move || '')}${warn ? ' <strong style="color:#a16207">⚠ ' + esc(r.state === "adjust" ? "조정필요" : "경고") + '</strong>' : ''}</td>
     </tr>`;
   }).join("");
@@ -1706,13 +1720,11 @@ function buildReportFromData(d) {
       ${i === 0 ? `<td rowspan="${budRows.length}">${esc(plan.taskType || '현장 방문')}</td>` : ""}
       ${i === 0 ? `<td rowspan="${budRows.length}">운영비</td>` : ""}
       <td>${esc(r.name)}</td>
-      <td>${(r.ruleAmount || 0).toLocaleString()}<br><span class="note">${esc(r.ruleFormula || '')}</span></td>
-      <td>${(r.estimatedAmount || 0).toLocaleString()}<br><span class="note">${esc(r.estimatedFormula || '')}</span></td>
+      <td>${(r.estimatedAmount || 0).toLocaleString()}</td>
     </tr>
   `).join("");
 
-  const ruleTotal = bud.ruleTotal || 0;
-  const estimatedTotal = bud.estimatedTotal ?? ruleTotal;
+  const estimatedTotal = bud.estimatedTotal ?? bud.ruleTotal ?? 0;
   const limit = bud.budgetLimit || plan.budgetLimit || estimatedTotal;
   const excludedCount = allVisits.length - activeVisits.length;
 
@@ -1730,7 +1742,7 @@ function buildReportFromData(d) {
         <p>나. 일정: ${esc(formatDate(period.start))} ~ ${esc(formatDate(period.end))}</p>
         <p>다. 지역: ${esc(plan.region || '')}</p>
         <p>라. 인원: 총 ${(plan.peopleTotal || 0).toLocaleString()}명</p>
-        ${(plan.personnel && plan.personnel.length) ? `<p class="indent note">${plan.personnel.map(p => esc(p.org + ' ' + p.count + '명')).join(', ')}</p>` : ''}
+        ${(plan.personnel && plan.personnel.length > 1) ? `<p class="indent note">${plan.personnel.map(p => esc(p.org + ' ' + p.count + '명')).join(', ')}</p>` : ''}
         ${doc.hotel ? `<p>마. 숙소: ${esc(doc.hotel)}</p>` : ''}
       </section>
 
@@ -1782,15 +1794,13 @@ function buildReportFromData(d) {
               <th style="width:12%">세목</th>
               <th style="width:14%">세세목</th>
               <th>세부내역</th>
-              <th style="width:17%">기준금액<br><span class="note">(경비 기준 설정)</span></th>
-              <th style="width:17%">예상 사용 금액<br><span class="note">(리서치 기반)</span></th>
+              <th style="width:20%">금액</th>
             </tr>
           </thead>
           <tbody>
             ${budgetHtml}
             <tr class="sum-row">
               <td colspan="3">합계</td>
-              <td>${ruleTotal.toLocaleString()}</td>
               <td${estimatedTotal > limit ? ' style="color:#b91c1c"' : ''}>${estimatedTotal.toLocaleString()}</td>
             </tr>
           </tbody>
@@ -1996,6 +2006,7 @@ async function runPrototype() {
 
   if (typeof hideAgentDetail === "function") hideAgentDetail();
   if (typeof resetPokemon === "function") resetPokemon();
+  stopStageProgress();
   if (!isBudgetApprovalRerun) {
     BUDGET_APPROVAL = null;
     showBudgetRejectForm = false;
@@ -2045,7 +2056,9 @@ async function runPrototype() {
           const i = stepIndexByStage[event.stage];
           if (id) setStatus(id, "실행 중", "running");
           if (i != null && typeof walkAndEvolveTo === "function") await walkAndEvolveTo(i);
+          if (id) startStageProgress(id);
         } else if (event.type === "stage_done") {
+          stopStageProgress();
           const id = idByStage[event.stage];
           if (id) {
             const badge = stageBadge({ state: event.state });
@@ -2061,6 +2074,7 @@ async function runPrototype() {
   } catch (err) {
     callFailed = err.message;
   }
+  stopStageProgress();
 
   // 처리가 끝난 뒤 자동으로 열어줄 담당 상세 — 막힌 단계가 있으면 그 담당을, 끝까지 갔으면
   // 경비 담당을 연다(문서 담당은 여기서 승인해야 열람할 수 있다 — openAgentDetail() 참고).
@@ -2167,12 +2181,14 @@ const AGENT_META = {
 // 아직 실행 전(대기) 상태 — 어느 담당 카드에도 배정되지 않은 채 출발선에 있는 몬스터볼
 const IDLE_STAGE = { tag:"대기 중", name:"몬스터볼", sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png", fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/1.png" };
 
-// 담당(체크포인트)별 진화 형태 — 사용자가 준 HTML의 이상해씨 계열 showdown gif 사용
+// 담당(체크포인트)별 진화 형태 — 1단계(기획)는 몬스터볼 그대로 두고, 이후 4단계에 걸쳐
+// 이상해씨 계열로 진화한다. (예전엔 대기 상태의 몬스터볼과 1단계의 이상해씨가 서로 다른
+// 스프라이트라 전환 순간 두 이미지가 겹쳐 보이는 문제가 있었음 — 1단계도 몬스터볼로 맞춰서 해결)
 const POKE_STAGES = [
-  { key:"plan",     tag:"기본 형태",  name:"이상해씨",     sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/1.gif",     fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/1.png" },
-  { key:"route",    tag:"1차 진화",   name:"이상해풀",     sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/2.gif",     fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/2.png" },
-  { key:"schedule", tag:"최종 진화",  name:"이상해꽃",     sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/3.gif",     fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/3.png" },
-  { key:"budget",   tag:"메가 진화",  name:"메가이상해꽃", sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/10033.png", fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/3.png" },
+  { key:"plan",     tag:"몬스터볼",   name:"몬스터볼",     sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png", fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/1.png" },
+  { key:"route",    tag:"기본 형태",  name:"이상해씨",     sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/1.gif",     fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/1.png" },
+  { key:"schedule", tag:"1차 진화",   name:"이상해풀",     sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/2.gif",     fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/2.png" },
+  { key:"budget",   tag:"최종 진화",  name:"이상해꽃",     sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/showdown/3.gif",     fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/3.png" },
   { key:"document", tag:"업무 완료",  name:"메가이상해꽃", sprite:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/10033.png", fallback:"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/3.png" },
 ];
 let CURRENT_POKE_STEP = -1; // -1 = 몬스터볼(대기), 0~4 = plan~document 카드 위
@@ -2229,6 +2245,35 @@ function walkAndEvolveTo(i) {
     }, travel);
   });
 }
+// 지금 실행 중인 단계가 얼마나 진행됐는지 정확히 알 방법이 없어서(스트리밍은 시작/종료만 알려줌),
+// 시간이 지날수록 100%에 점근하는 가짜 진행률을 보여준다 — 얼마나 더 기다려야 하는지 감이라도
+// 잡히게 하는 용도. 실제 완료(stage_done)는 별도로 오므로 여기서는 92%를 넘기지 않는다.
+let PROGRESS_TIMER = null;
+let PROGRESS_STAGE_ID = null;
+function startStageProgress(id) {
+  stopStageProgress();
+  PROGRESS_STAGE_ID = id;
+  const started = Date.now();
+  const TAU = 16000; // ms — 이 값이 클수록 진행률이 천천히 올라간다
+  const tick = () => {
+    const elapsed = Date.now() - started;
+    const pct = Math.min(92, Math.round(100 * (1 - Math.exp(-elapsed / TAU))));
+    const el = document.getElementById(id);
+    const status = el?.querySelector(".status");
+    if (status) status.textContent = `실행 중 ${pct}%`;
+    const pctEl = document.getElementById("pokePct");
+    if (pctEl) pctEl.textContent = `${pct}%`;
+  };
+  tick();
+  PROGRESS_TIMER = setInterval(tick, 400);
+}
+function stopStageProgress() {
+  if (PROGRESS_TIMER) { clearInterval(PROGRESS_TIMER); PROGRESS_TIMER = null; }
+  PROGRESS_STAGE_ID = null;
+  const pctEl = document.getElementById("pokePct");
+  if (pctEl) pctEl.textContent = "";
+}
+
 const AGENT_RENDER = {
   plan: (D) => {
     const p = D.plan || {}, per = p.period || {};
@@ -2392,7 +2437,7 @@ function openAgentDetail(key) {
   const idByKey = { plan:"a1", route:"a2", schedule:"a3", budget:"a4", document:"a5" };
   document.getElementById(idByKey[key])?.classList.add("active-agent");
 
-  if (AGENT_MAP) { AGENT_MAP.remove(); AGENT_MAP = null; }
+  if (AGENT_MAP) { AGENT_MAP.destroy(); AGENT_MAP = null; }
   if (key === "route") setTimeout(() => initAgentMap(D), 60);
 
   card.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2402,7 +2447,7 @@ function hideAgentDetail() {
   const card = document.getElementById("agentDetailCard");
   if (card) card.style.display = "none";
   ["a1","a2","a3","a4","a5"].forEach(id => document.getElementById(id)?.classList.remove("active-agent"));
-  if (AGENT_MAP) { AGENT_MAP.remove(); AGENT_MAP = null; }
+  if (AGENT_MAP) { AGENT_MAP.destroy(); AGENT_MAP = null; }
 }
 
 // 문서 담당 상세의 '최종 계획서 열기' 버튼 → 하단 미리보기 렌더 + 노출
@@ -2416,52 +2461,163 @@ function openFinalReport() {
   report.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-/* ── Leaflet 지도(핀 + 동선) — 리서치 담당 모달 전용 ── */
-function numIcon(n, color) {
-  return L.divIcon({
-    className: "",
-    html: `<div style="background:${color};width:30px;height:30px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:grid;place-items:center;box-shadow:0 3px 7px rgba(0,0,0,.35);border:2px solid #fff"><span style="transform:rotate(45deg);color:#fff;font-weight:800;font-size:14px">${n}</span></div>`,
-    iconSize: [30, 30], iconAnchor: [15, 30],
-  });
+/* ── 네이버 지도(핀 + 동선) — 리서치 담당 모달 전용 ── */
+
+// 클라이언트 ID는 서버(/config)가 내려준다(NCP 콘솔에서 도메인으로 제한하는 공개용 값이라
+// 화면에 노출돼도 된다 — Directions/Geocoding REST 호출용 시크릿과는 다른 값이다).
+// loadNaverMaps()는 { ok, reason } 을 돌려준다. reason 은 실패 원인을 구분한다:
+//   "server"  — orchestrator 서버(/config)에 연결 못 함 (서버 꺼짐 / 포트 다름 / file:// 에서 CORS)
+//   "noKey"   — 서버는 응답했지만 .env 에 NAVER_MAP_CLIENT_ID 가 비어 있음
+//   "script"  — 네이버 지도 스크립트 자체를 못 받음 (네트워크 차단 등)
+//   "auth"    — 스크립트는 받았지만 네이버가 이 접속 주소(도메인)를 거부함 (navermap_authFailure)
+//   "unknown" — 로드는 됐는데 naver.maps 가 없음
+// "auth" 가 가장 흔한 실 배포 원인이다: .env 와 서버가 모두 정상이어도, NCP 콘솔의 해당 Maps
+// 애플리케이션에 "지금 접속한 주소"가 Web 서비스 URL 로 등록돼 있지 않거나 동적 지도(Dynamic Map)가
+// 꺼져 있으면 여기서 걸린다.
+window.__NAVER_AUTH_FAILED = false;
+// 네이버 지도 SDK는 인증 실패 시 이 전역 함수를 호출한다(스크립트 onload 이후 비동기로 발생).
+window.navermap_authFailure = function () {
+  window.__NAVER_AUTH_FAILED = true;
+};
+let NAVER_MAPS_LOAD_PROMISE = null;
+function loadNaverMaps() {
+  if (NAVER_MAPS_LOAD_PROMISE) return NAVER_MAPS_LOAD_PROMISE;
+  NAVER_MAPS_LOAD_PROMISE = (async () => {
+    let config;
+    try {
+      const res = await fetch(CONFIG_ENDPOINT);
+      config = await res.json();
+    } catch {
+      return { ok: false, reason: "server" };
+    }
+    if (!config || !config.naverMapClientId) return { ok: false, reason: "noKey" };
+    try {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=${encodeURIComponent(config.naverMapClientId)}`;
+        script.onload = resolve;
+        script.onerror = () => reject(new Error("네이버 지도 스크립트 로드 실패"));
+        document.head.appendChild(script);
+      });
+    } catch {
+      return { ok: false, reason: "script" };
+    }
+    // 스크립트 onload 직후에는 navermap_authFailure 콜백이 아직 안 왔을 수 있어 한 틱 기다린다.
+    await new Promise((r) => setTimeout(r, 0));
+    if (window.__NAVER_AUTH_FAILED) return { ok: false, reason: "auth" };
+    if (typeof naver === "undefined" || !naver.maps) return { ok: false, reason: "unknown" };
+    return { ok: true, reason: "" };
+  })();
+  return NAVER_MAPS_LOAD_PROMISE;
 }
-function homeIcon() {
-  return L.divIcon({
-    className: "",
-    html: `<div style="background:#16a34a;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;box-shadow:0 3px 7px rgba(0,0,0,.35);border:2px solid #fff;font-size:13px">🏨</div>`,
-    iconSize: [26, 26], iconAnchor: [13, 13],
-  });
+loadNaverMaps(); // 모달을 열기 전에 미리 받아둔다(첫 클릭에서 로딩 대기가 안 보이게)
+
+function numIconContent(n, color) {
+  return `<div style="background:${color};width:30px;height:30px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:grid;place-items:center;box-shadow:0 3px 7px rgba(0,0,0,.35);border:2px solid #fff"><span style="transform:rotate(45deg);color:#fff;font-weight:800;font-size:14px">${n}</span></div>`;
 }
-function initAgentMap(D) {
+function homeIconContent() {
+  return `<div style="background:#16a34a;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;box-shadow:0 3px 7px rgba(0,0,0,.35);border:2px solid #fff;font-size:13px">🏨</div>`;
+}
+
+function addAgentMapMarker(position, content, anchor, popupHtml) {
+  const marker = new naver.maps.Marker({
+    position, map: AGENT_MAP,
+    icon: { content, anchor: new naver.maps.Point(anchor[0], anchor[1]) },
+  });
+  const infoWindow = new naver.maps.InfoWindow({ content: `<div style="padding:8px 10px;font-size:12.5px;line-height:1.5">${popupHtml}</div>` });
+  naver.maps.Event.addListener(marker, "click", () => {
+    if (infoWindow.getMap()) infoWindow.close(); else infoWindow.open(AGENT_MAP, marker);
+  });
+  return marker;
+}
+
+function naverMapErrorHtml(reason) {
+  const box = (msg) => `<div class="muted" style="padding:16px;font-size:12.5px;line-height:1.7">${msg}</div>`;
+  const origin = location.origin && location.origin !== "null" ? location.origin : "file:// (로컬 파일 직접 열기)";
+  if (reason === "server") {
+    return box(`지도를 불러올 수 없어요. <b>orchestrator 서버에 연결하지 못했습니다.</b><br>` +
+      `터미널에서 <code>node orchestrator/call-agent --serve</code> 를 켰는지 확인해 주세요.` +
+      (location.protocol === "file:" ? `<br><br>지금 이 페이지를 <b>파일(file://)로 직접 열고</b> 계신데, 이 경우 서버 연결·지도 인증이 막힙니다. 로컬 서버로 <b>http://localhost:8080</b> 처럼 열어 주세요.` : ""));
+  }
+  if (reason === "noKey") {
+    return box(`지도를 불러올 수 없어요. 서버는 응답했지만 <b>.env 의 NAVER_MAP_CLIENT_ID 가 비어 있습니다.</b><br>` +
+      `<code>.env</code> 에 NAVER_MAP_CLIENT_ID / NAVER_MAP_CLIENT_SECRET 을 채운 뒤 서버를 다시 시작해 주세요.`);
+  }
+  if (reason === "script") {
+    return box(`지도를 불러올 수 없어요. <b>네이버 지도 스크립트를 내려받지 못했습니다.</b><br>` +
+      `네트워크 연결 또는 사내 방화벽에서 <code>oapi.map.naver.com</code> 접근이 막혀 있는지 확인해 주세요.`);
+  }
+  if (reason === "auth") {
+    return box(`지도를 불러올 수 없어요. <b>네이버 지도 인증에 실패했습니다(navermap_authFailure).</b><br>` +
+      `클라이언트 ID·서버·.env 는 모두 정상이지만, 네이버가 <b>지금 접속한 주소(${esc(origin)})</b>를 거부했습니다.<br><br>` +
+      `NCP 콘솔 &gt; <b>Maps</b> 애플리케이션에서 다음을 확인해 주세요:<br>` +
+      `① <b>Web 서비스 URL</b> 목록에 <code>${esc(origin)}</code> 를 등록<br>` +
+      `② <b>Dynamic Map(동적 지도)</b> 서비스가 켜져 있는지 확인<br>` +
+      `③ .env 의 CLIENT_ID/SECRET 이 <b>바로 그 애플리케이션</b>의 키인지 확인` +
+      (location.protocol === "file:" ? `<br><br>참고: <b>file://</b> 로 직접 연 페이지는 도메인이 없어 인증할 수 없습니다. <b>http://localhost:8080</b> 처럼 서버로 열어 주세요.` : ""));
+  }
+  return box(`지도를 불러올 수 없어요. 알 수 없는 이유로 지도 SDK가 준비되지 않았습니다. 새로고침 후 다시 시도해 주세요.`);
+}
+
+async function initAgentMap(D) {
   const el = document.getElementById("agentMap");
-  if (!el || typeof L === "undefined") return;
-  if (AGENT_MAP) { AGENT_MAP.remove(); AGENT_MAP = null; }
-  AGENT_MAP = L.map(el, { scrollWheelZoom: false }).setView([36.5, 127.8], 7);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 18, attribution: "&copy; OpenStreetMap contributors",
-  }).addTo(AGENT_MAP);
+  if (!el) return;
+  if (AGENT_MAP) { AGENT_MAP.destroy(); AGENT_MAP = null; }
+
+  const status = await loadNaverMaps();
+  // 모달이 닫혔거나 다른 담당으로 이동한 사이 로딩이 끝났을 수 있으니 다시 확인한다.
+  if (!document.getElementById("agentMap") || document.getElementById("agentDetailCard")?.style.display === "none") return;
+  if (!status.ok) {
+    el.innerHTML = naverMapErrorHtml(status.reason);
+    return;
+  }
+  el.innerHTML = "";
+
+  AGENT_MAP = new naver.maps.Map(el, {
+    center: new naver.maps.LatLng(36.5, 127.8), zoom: 7, scrollWheel: false,
+  });
+
+  // 인증 실패는 지도 생성 직후 비동기로 통보될 수 있다. 한 틱 뒤 확인해서, 빈 회색 지도 대신
+  // 원인을 알려주는 안내를 보여준다.
+  await new Promise((r) => setTimeout(r, 60));
+  if (window.__NAVER_AUTH_FAILED) {
+    if (AGENT_MAP) { AGENT_MAP.destroy(); AGENT_MAP = null; }
+    if (document.getElementById("agentMap")) el.innerHTML = naverMapErrorHtml("auth");
+    return;
+  }
 
   const dayColor = { 1: "#2563eb", 2: "#7c3aed" };
-  const bounds = [], paths = {};
+  const bounds = new naver.maps.LatLngBounds();
+  let boundsCount = 0;
+  const paths = {};
   (D.route?.visits || []).filter(v => !v.excluded).forEach(v => {
     if (v.lat == null || v.lng == null) return;
-    const c = [v.lat, v.lng];
-    bounds.push(c);
-    L.marker(c, { icon: numIcon(v.no, dayColor[v.day] || "#2563eb") }).addTo(AGENT_MAP)
-      .bindPopup(`<b>${esc(v.name)}</b><br>${esc(v.address)}<br><small>${v.day ? v.day + "일차" : ""} · 도착 ${esc(v.arrive)}</small>`);
-    (paths[v.day] = paths[v.day] || []).push(c);
+    const pos = new naver.maps.LatLng(v.lat, v.lng);
+    bounds.extend(pos);
+    boundsCount += 1;
+    addAgentMapMarker(
+      pos, numIconContent(v.no, dayColor[v.day] || "#2563eb"), [15, 30],
+      `<b>${esc(v.name)}</b><br>${esc(v.address)}<br><small>${v.day ? v.day + "일차" : ""} · 도착 ${esc(v.arrive)}</small>`,
+    );
+    (paths[v.day] = paths[v.day] || []).push(pos);
   });
   Object.entries(paths).forEach(([d, pts]) => {
-    if (pts.length > 1) L.polyline(pts, { color: dayColor[d] || "#2563eb", weight: 4, opacity: .8 }).addTo(AGENT_MAP);
+    if (pts.length > 1) {
+      new naver.maps.Polyline({ map: AGENT_MAP, path: pts, strokeColor: dayColor[d] || "#2563eb", strokeWeight: 4, strokeOpacity: .8 });
+    }
   });
 
   const hLat = D.document?.hotelLat, hLng = D.document?.hotelLng;
   if (hLat != null && hLng != null) {
-    bounds.push([hLat, hLng]);
-    L.marker([hLat, hLng], { icon: homeIcon() }).addTo(AGENT_MAP).bindPopup(`<b>숙소</b><br>${esc(D.document?.hotel || "")}`);
+    const hotelPos = new naver.maps.LatLng(hLat, hLng);
+    bounds.extend(hotelPos);
+    boundsCount += 1;
+    addAgentMapMarker(hotelPos, homeIconContent(), [13, 13], `<b>숙소</b><br>${esc(D.document?.hotel || "")}`);
   }
 
-  if (bounds.length) AGENT_MAP.fitBounds(bounds, { padding: [35, 35] });
-  setTimeout(() => AGENT_MAP.invalidateSize(), 60);
+  if (boundsCount > 1) AGENT_MAP.fitBounds(bounds, { top: 35, right: 35, bottom: 35, left: 35 });
+  else if (boundsCount === 1) AGENT_MAP.setCenter(bounds.getCenter());
+  setTimeout(() => naver.maps.Event.trigger(AGENT_MAP, "resize"), 60);
 }
 
 // 초기 포켓몬 위치 배치 + 창 크기 변경 시 현재 단계로 재정렬
