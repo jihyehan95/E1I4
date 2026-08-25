@@ -80,7 +80,9 @@ function resolveClaudeExe() {
 
 // 로컬 claude CLI를 한 번 호출한다(print 모드, 세션 저장 없음, 도구/MCP/슬래시커맨드 전부 꺼서
 // 불필요한 컨텍스트·비용을 줄인다). jsonSchema를 주면 --json-schema로 구조화 출력을 강제한다.
-function runLocalClaude({ systemPrompt, userText, jsonSchema }) {
+// effort를 안 주면 CLI 기본값(높은 편)이 적용돼 단순 작업도 필요 이상으로 오래 생각한다 —
+// 호출부에서 작업 성격에 맞게 낮춰서 속도를 확보한다.
+function runLocalClaude({ systemPrompt, userText, jsonSchema, effort }) {
   const exe = resolveClaudeExe();
   return new Promise((resolve, reject) => {
     const args = [
@@ -95,6 +97,7 @@ function runLocalClaude({ systemPrompt, userText, jsonSchema }) {
       "--setting-sources", "",
     ];
     if (jsonSchema) args.push("--json-schema", JSON.stringify(jsonSchema));
+    if (effort) args.push("--effort", effort);
 
     const child = spawn(exe, args, { windowsHide: true });
     let out = "";
@@ -331,7 +334,9 @@ async function callStage(client, agentName, inputText, extraBlocks = [], useLoca
     if (extraBlocks.length) {
       throw new Error(`로컬 claude 모드에서는 "${agentName}" 단계의 이미지/PDF 첨부 입력을 지원하지 않습니다.`);
     }
-    const result = await runLocalClaude({ systemPrompt: system, userText: inputText });
+    // medium: plan/route/budget 등은 실제 판단(반려·초과 여부 등)이 걸려 있어 too-low는
+    // 위험하지만, CLI 기본값(높은 편)은 이 정도 작업에 비해 느려서 한 단계 낮춘다.
+    const result = await runLocalClaude({ systemPrompt: system, userText: inputText, effort: "medium" });
     raw = result.result || "";
   } else {
     // extraBlocks가 있으면(예: 참고 보고서 형식 PDF/이미지) 텍스트 앞에 붙여서 함께 보낸다
@@ -581,7 +586,8 @@ async function aggregateStage(client, stageName, stageResult, useLocal = false) 
   if (useLocal) {
     const jsonSchema = z.toJSONSchema(ShapeZ);
     delete jsonSchema.$schema; // claude CLI의 --json-schema는 $schema 키(외부 참조로 오인)를 거부한다
-    const result = await runLocalClaude({ systemPrompt: system, userText: body, jsonSchema });
+    // 단순 재구조화라 API 경로와 동일하게 low로 — 여기서 higher effort는 속도만 깎아먹는다.
+    const result = await runLocalClaude({ systemPrompt: system, userText: body, jsonSchema, effort: "low" });
     if (result.structured_output !== undefined) {
       parsedJson = result.structured_output;
     } else {
