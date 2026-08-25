@@ -5,9 +5,8 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1" name="viewport"/>
 <title>딸깍 AI</title>
-<!-- [추가] 지도(핀+동선)용 Leaflet - API 키 불필요 -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<!-- [추가] 지도(핀+동선)는 네이버 지도 JS SDK를 쓴다. 클라이언트 ID가 있어야 로드되므로
+     스크립트 태그는 본문 하단에서 서버(/config)가 내려준 값으로 동적으로 붙인다. -->
 <style>
     :root{
       --bg:#f6f8fb;
@@ -959,12 +958,13 @@
 </main>
 </div>
 
-<!-- [추가] Leaflet (지도) -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <!-- 에이전트 파이프라인 결과 주입 (orchestrator가 생성). 없으면 아래 스크립트가 기존 데모 로직으로 폴백 -->
 <script src="flowpilot-data.js"></script>
 <script>
+const ORCHESTRATOR_BASE = "http://localhost:8788";
+const GEOCODE_ENDPOINT = `${ORCHESTRATOR_BASE}/api/geocode`;
+const CONFIG_ENDPOINT = `${ORCHESTRATOR_BASE}/config`;
+
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function setStatus(id, text, mode = "") {
@@ -1124,7 +1124,7 @@ function removeVisit(index) {
   renderVisitList();
 }
 
-// ── 장소명 검색(OpenStreetMap Nominatim, 키 불필요) → 주소 선택 ──
+// ── 장소명 검색(서버 프록시 경유 Naver Geocoding) → 주소 선택 ──
 let visitSearchTimer = null;
 let visitSearchResultList = [];
 
@@ -1140,11 +1140,11 @@ function searchVisitPlace() {
   setVisitSearchLoading(true);
   visitSearchTimer = setTimeout(async () => {
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&accept-language=ko&q=${encodeURIComponent(q)}`);
+      const res = await fetch(`${GEOCODE_ENDPOINT}?q=${encodeURIComponent(q)}`);
       const list = await res.json();
       renderVisitSearchResults(Array.isArray(list) ? list : []);
     } catch {
-      // 검색 API 실패해도 주소는 직접 입력할 수 있으니 조용히 무시한다.
+      // 검색 API 실패해도(서버 미실행 등) 주소는 직접 입력할 수 있으니 조용히 무시한다.
       hideVisitSearchResults();
     } finally {
       setVisitSearchLoading(false);
@@ -1250,12 +1250,25 @@ function backToStartScreen() {
 }
 
 // ── 자사 양식 업로드 → AI가 읽어서 "업무 Input"(기본양식과 같은 항목)에 미리 채워줌 ──
-const TEMPLATE_PARSE_ENDPOINT = "http://localhost:8788/parse-template";
+const TEMPLATE_PARSE_ENDPOINT = `${ORCHESTRATOR_BASE}/parse-template`;
+const MAX_TEMPLATE_UPLOAD_BYTES = 10 * 1024 * 1024; // 자사 양식 업로드 크기 제한: 10MB (서버도 초과 시 413으로 재확인)
 let customTemplateFile = null; // { name, mediaType, base64 }
 
 function handleCustomTemplateChange(event) {
   const file = event.target.files[0];
   if (!file) return;
+  const status = document.getElementById("parseStatus");
+  if (file.size > MAX_TEMPLATE_UPLOAD_BYTES) {
+    customTemplateFile = null;
+    event.target.value = "";
+    const nameEl = document.getElementById("customAttachName");
+    if (nameEl) nameEl.textContent = "첨부된 파일 없음";
+    const btn = document.getElementById("parseTemplateBtn");
+    if (btn) btn.disabled = true;
+    if (status) { status.className = "parse-status warn"; status.textContent = `파일이 너무 커요 (최대 10MB, 이 파일 ${(file.size / 1024 / 1024).toFixed(1)}MB).`; }
+    return;
+  }
+  if (status) { status.className = "parse-status"; status.textContent = ""; }
   const reader = new FileReader();
   reader.onload = () => {
     const base64 = String(reader.result).split(",")[1] || "";
@@ -2355,7 +2368,7 @@ function openAgentDetail(key) {
   const idByKey = { plan:"a1", route:"a2", schedule:"a3", budget:"a4", document:"a5" };
   document.getElementById(idByKey[key])?.classList.add("active-agent");
 
-  if (AGENT_MAP) { AGENT_MAP.remove(); AGENT_MAP = null; }
+  if (AGENT_MAP) { AGENT_MAP.destroy(); AGENT_MAP = null; }
   if (key === "route") setTimeout(() => initAgentMap(D), 60);
 
   card.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2365,7 +2378,7 @@ function hideAgentDetail() {
   const card = document.getElementById("agentDetailCard");
   if (card) card.style.display = "none";
   ["a1","a2","a3","a4","a5"].forEach(id => document.getElementById(id)?.classList.remove("active-agent"));
-  if (AGENT_MAP) { AGENT_MAP.remove(); AGENT_MAP = null; }
+  if (AGENT_MAP) { AGENT_MAP.destroy(); AGENT_MAP = null; }
 }
 
 // 문서 담당 상세의 '최종 계획서 열기' 버튼 → 하단 미리보기 렌더 + 노출
@@ -2379,52 +2392,103 @@ function openFinalReport() {
   report.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-/* ── Leaflet 지도(핀 + 동선) — 리서치 담당 모달 전용 ── */
-function numIcon(n, color) {
-  return L.divIcon({
-    className: "",
-    html: `<div style="background:${color};width:30px;height:30px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:grid;place-items:center;box-shadow:0 3px 7px rgba(0,0,0,.35);border:2px solid #fff"><span style="transform:rotate(45deg);color:#fff;font-weight:800;font-size:14px">${n}</span></div>`,
-    iconSize: [30, 30], iconAnchor: [15, 30],
-  });
+/* ── 네이버 지도(핀 + 동선) — 리서치 담당 모달 전용 ── */
+
+// 클라이언트 ID는 서버(/config)가 내려준다(NCP 콘솔에서 도메인으로 제한하는 공개용 값이라
+// 화면에 노출돼도 된다 — Directions/Geocoding REST 호출용 시크릿과는 다른 값이다).
+let NAVER_MAPS_LOAD_PROMISE = null;
+function loadNaverMaps() {
+  if (NAVER_MAPS_LOAD_PROMISE) return NAVER_MAPS_LOAD_PROMISE;
+  NAVER_MAPS_LOAD_PROMISE = (async () => {
+    try {
+      const res = await fetch(CONFIG_ENDPOINT);
+      const config = await res.json();
+      if (!config.naverMapClientId) return false;
+      await new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=${encodeURIComponent(config.naverMapClientId)}`;
+        script.onload = resolve;
+        script.onerror = () => reject(new Error("네이버 지도 스크립트 로드 실패"));
+        document.head.appendChild(script);
+      });
+      return typeof naver !== "undefined" && !!naver.maps;
+    } catch {
+      return false;
+    }
+  })();
+  return NAVER_MAPS_LOAD_PROMISE;
 }
-function homeIcon() {
-  return L.divIcon({
-    className: "",
-    html: `<div style="background:#16a34a;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;box-shadow:0 3px 7px rgba(0,0,0,.35);border:2px solid #fff;font-size:13px">🏨</div>`,
-    iconSize: [26, 26], iconAnchor: [13, 13],
-  });
+loadNaverMaps(); // 모달을 열기 전에 미리 받아둔다(첫 클릭에서 로딩 대기가 안 보이게)
+
+function numIconContent(n, color) {
+  return `<div style="background:${color};width:30px;height:30px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:grid;place-items:center;box-shadow:0 3px 7px rgba(0,0,0,.35);border:2px solid #fff"><span style="transform:rotate(45deg);color:#fff;font-weight:800;font-size:14px">${n}</span></div>`;
 }
-function initAgentMap(D) {
+function homeIconContent() {
+  return `<div style="background:#16a34a;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;box-shadow:0 3px 7px rgba(0,0,0,.35);border:2px solid #fff;font-size:13px">🏨</div>`;
+}
+
+function addAgentMapMarker(position, content, anchor, popupHtml) {
+  const marker = new naver.maps.Marker({
+    position, map: AGENT_MAP,
+    icon: { content, anchor: new naver.maps.Point(anchor[0], anchor[1]) },
+  });
+  const infoWindow = new naver.maps.InfoWindow({ content: `<div style="padding:8px 10px;font-size:12.5px;line-height:1.5">${popupHtml}</div>` });
+  naver.maps.Event.addListener(marker, "click", () => {
+    if (infoWindow.getMap()) infoWindow.close(); else infoWindow.open(AGENT_MAP, marker);
+  });
+  return marker;
+}
+
+async function initAgentMap(D) {
   const el = document.getElementById("agentMap");
-  if (!el || typeof L === "undefined") return;
-  if (AGENT_MAP) { AGENT_MAP.remove(); AGENT_MAP = null; }
-  AGENT_MAP = L.map(el, { scrollWheelZoom: false }).setView([36.5, 127.8], 7);
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 18, attribution: "&copy; OpenStreetMap contributors",
-  }).addTo(AGENT_MAP);
+  if (!el) return;
+  if (AGENT_MAP) { AGENT_MAP.destroy(); AGENT_MAP = null; }
+
+  const ready = await loadNaverMaps();
+  // 모달이 닫혔거나 다른 담당으로 이동한 사이 로딩이 끝났을 수 있으니 다시 확인한다.
+  if (!document.getElementById("agentMap") || document.getElementById("agentDetailCard")?.style.display === "none") return;
+  if (!ready) {
+    el.innerHTML = `<div class="muted" style="padding:16px;font-size:12.5px">지도를 불러올 수 없어요. .env의 NAVER_MAP_CLIENT_ID/NAVER_MAP_CLIENT_SECRET 설정과 orchestrator 서버(node orchestrator/call-agent --serve) 실행 여부를 확인해 주세요.</div>`;
+    return;
+  }
+  el.innerHTML = "";
+
+  AGENT_MAP = new naver.maps.Map(el, {
+    center: new naver.maps.LatLng(36.5, 127.8), zoom: 7, scrollWheel: false,
+  });
 
   const dayColor = { 1: "#2563eb", 2: "#7c3aed" };
-  const bounds = [], paths = {};
+  const bounds = new naver.maps.LatLngBounds();
+  let boundsCount = 0;
+  const paths = {};
   (D.route?.visits || []).filter(v => !v.excluded).forEach(v => {
     if (v.lat == null || v.lng == null) return;
-    const c = [v.lat, v.lng];
-    bounds.push(c);
-    L.marker(c, { icon: numIcon(v.no, dayColor[v.day] || "#2563eb") }).addTo(AGENT_MAP)
-      .bindPopup(`<b>${esc(v.name)}</b><br>${esc(v.address)}<br><small>${v.day ? v.day + "일차" : ""} · 도착 ${esc(v.arrive)}</small>`);
-    (paths[v.day] = paths[v.day] || []).push(c);
+    const pos = new naver.maps.LatLng(v.lat, v.lng);
+    bounds.extend(pos);
+    boundsCount += 1;
+    addAgentMapMarker(
+      pos, numIconContent(v.no, dayColor[v.day] || "#2563eb"), [15, 30],
+      `<b>${esc(v.name)}</b><br>${esc(v.address)}<br><small>${v.day ? v.day + "일차" : ""} · 도착 ${esc(v.arrive)}</small>`,
+    );
+    (paths[v.day] = paths[v.day] || []).push(pos);
   });
   Object.entries(paths).forEach(([d, pts]) => {
-    if (pts.length > 1) L.polyline(pts, { color: dayColor[d] || "#2563eb", weight: 4, opacity: .8 }).addTo(AGENT_MAP);
+    if (pts.length > 1) {
+      new naver.maps.Polyline({ map: AGENT_MAP, path: pts, strokeColor: dayColor[d] || "#2563eb", strokeWeight: 4, strokeOpacity: .8 });
+    }
   });
 
   const hLat = D.document?.hotelLat, hLng = D.document?.hotelLng;
   if (hLat != null && hLng != null) {
-    bounds.push([hLat, hLng]);
-    L.marker([hLat, hLng], { icon: homeIcon() }).addTo(AGENT_MAP).bindPopup(`<b>숙소</b><br>${esc(D.document?.hotel || "")}`);
+    const hotelPos = new naver.maps.LatLng(hLat, hLng);
+    bounds.extend(hotelPos);
+    boundsCount += 1;
+    addAgentMapMarker(hotelPos, homeIconContent(), [13, 13], `<b>숙소</b><br>${esc(D.document?.hotel || "")}`);
   }
 
-  if (bounds.length) AGENT_MAP.fitBounds(bounds, { padding: [35, 35] });
-  setTimeout(() => AGENT_MAP.invalidateSize(), 60);
+  if (boundsCount > 1) AGENT_MAP.fitBounds(bounds, { top: 35, right: 35, bottom: 35, left: 35 });
+  else if (boundsCount === 1) AGENT_MAP.setCenter(bounds.getCenter());
+  setTimeout(() => naver.maps.Event.trigger(AGENT_MAP, "resize"), 60);
 }
 
 // 초기 포켓몬 위치 배치 + 창 크기 변경 시 현재 단계로 재정렬
