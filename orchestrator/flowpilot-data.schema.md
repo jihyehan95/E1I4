@@ -93,6 +93,7 @@ UI의 오피스 단계 배지(대기/실행중/…) 색과 orchestrator의 "멈�
 | `arrive` | string | 도착 예정 시각 `"HH:MM"` |
 | `excluded` | boolean | 동선 제외 여부 |
 | `excludeReason` | string | 제외 사유(선택, `excluded:true` 일 때) |
+| `lat` / `lng` | number (선택) | 위도/경도. call-agent가 Naver Geocoding으로 직접 확인해 이름으로 매칭해 붙인 실측값 — LLM 취합 결과가 아니다. 못 찾았으면 필드 자체가 없다(지도에서 그 핀은 생략) |
 
 ## 3. `schedule` — 일정
 
@@ -138,6 +139,7 @@ UI의 오피스 단계 배지(대기/실행중/…) 색과 orchestrator의 "멈�
 | `author` | string | 작성자 |
 | `createdAt` | string | 작성일(YYYY-MM-DD) |
 | `hotel` | string | 숙소(선택) |
+| `hotelLat` / `hotelLng` | number (선택) | 숙소 위도/경도. call-agent가 `hotel` 값을 Naver Geocoding으로 직접 확인한 실측값 — 못 찾았으면 필드 자체가 없다 |
 | `note` | string | 하단 참고(제외 목적지 등) |
 
 ---
