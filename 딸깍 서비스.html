@@ -178,17 +178,6 @@
     .visit-search-results div{padding:9px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--line)}
     .visit-search-results div:last-child{border-bottom:0}
     .visit-search-results div:hover{background:var(--primary-soft)}
-    .visit-time-wrap{position:relative}
-    .visit-time-wrap input[type="time"]{padding-right:30px}
-    .visit-time-steppers{
-      position:absolute;right:4px;top:4px;bottom:4px;
-      display:flex;flex-direction:column;justify-content:center;
-    }
-    .visit-time-steppers button{
-      border:0;background:transparent;color:var(--muted);cursor:pointer;
-      font-size:9px;line-height:1;padding:2px 5px;
-    }
-    .visit-time-steppers button:hover{color:var(--primary)}
     .visit-list{
       margin-top:10px;
       display:flex;
@@ -880,13 +869,7 @@
 </div>
 <div>
 <label class="visit-field-label">방문시간</label>
-<div class="visit-time-wrap">
 <input type="time" id="visitTimeInput" class="is-empty" oninput="syncDateTimeEmptyClass(this)"/>
-<div class="visit-time-steppers">
-<button type="button" onclick="stepVisitTime()" aria-label="오전/오후 전환" tabindex="-1">▲</button>
-<button type="button" onclick="stepVisitTime()" aria-label="오전/오후 전환" tabindex="-1">▼</button>
-</div>
-</div>
 </div>
 <div>
 <label class="visit-field-label">할 일(주요 내용)</label>
@@ -896,13 +879,10 @@
 <label class="visit-field-label">체류시간</label>
 <input type="text" id="visitDwellInput" placeholder="모르면 비워두기(예: 1시간)"/>
 </div>
-<div>
-<label class="visit-field-label" style="visibility:hidden">추가</label>
-<div style="display:flex;gap:6px">
+</div>
+<div style="display:flex;gap:6px;margin-top:10px">
 <button type="button" class="btn secondary visit-add-btn" id="visitAddBtn" onclick="addVisit()">추가</button>
 <button type="button" class="btn secondary visit-add-btn" id="visitCancelEditBtn" onclick="cancelEditVisit()" style="display:none">취소</button>
-</div>
-</div>
 </div>
 <div class="visit-list" id="visitList"></div>
 <textarea id="visits" style="display:none"></textarea>
@@ -1151,16 +1131,6 @@ function searchVisitPlace() {
       setVisitSearchLoading(false);
     }
   }, 400);
-}
-
-// 방문시간 위/아래 버튼 — 분 단위가 아니라 오전/오후만 바꾼다(12시간 이동은 오전<->오후 전환과 같음).
-function stepVisitTime() {
-  const input = document.getElementById("visitTimeInput");
-  if (!input) return;
-  const [h, m] = (input.value || "09:00").split(":").map(Number);
-  const nextHour = (h + 12) % 24;
-  input.value = `${String(nextHour).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-  input.dispatchEvent(new Event("input"));
 }
 
 function renderVisitSearchResults(list) {
@@ -1719,7 +1689,7 @@ function buildReportFromData(d) {
     <tr>
       ${i === 0 ? `<td rowspan="${budRows.length}">${esc(plan.taskType || '현장 방문')}</td>` : ""}
       ${i === 0 ? `<td rowspan="${budRows.length}">운영비</td>` : ""}
-      <td>${esc(r.name)}</td>
+      <td style="text-align:center">${esc(r.name)}</td>
       <td>${(r.estimatedAmount || 0).toLocaleString()}</td>
     </tr>
   `).join("");
@@ -2437,7 +2407,7 @@ function openAgentDetail(key) {
   const idByKey = { plan:"a1", route:"a2", schedule:"a3", budget:"a4", document:"a5" };
   document.getElementById(idByKey[key])?.classList.add("active-agent");
 
-  if (AGENT_MAP) { AGENT_MAP.destroy(); AGENT_MAP = null; }
+  if (AGENT_MAP) { try { AGENT_MAP.destroy(); } catch {} AGENT_MAP = null; }
   if (key === "route") setTimeout(() => initAgentMap(D), 60);
 
   card.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2447,7 +2417,7 @@ function hideAgentDetail() {
   const card = document.getElementById("agentDetailCard");
   if (card) card.style.display = "none";
   ["a1","a2","a3","a4","a5"].forEach(id => document.getElementById(id)?.classList.remove("active-agent"));
-  if (AGENT_MAP) { AGENT_MAP.destroy(); AGENT_MAP = null; }
+  if (AGENT_MAP) { try { AGENT_MAP.destroy(); } catch {} AGENT_MAP = null; }
 }
 
 // 문서 담당 상세의 '최종 계획서 열기' 버튼 → 하단 미리보기 렌더 + 노출
@@ -2494,7 +2464,7 @@ function loadNaverMaps() {
     try {
       await new Promise((resolve, reject) => {
         const script = document.createElement("script");
-        script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=${encodeURIComponent(config.naverMapClientId)}`;
+        script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(config.naverMapClientId)}`;
         script.onload = resolve;
         script.onerror = () => reject(new Error("네이버 지도 스크립트 로드 실패"));
         document.head.appendChild(script);
@@ -2562,7 +2532,7 @@ function naverMapErrorHtml(reason) {
 async function initAgentMap(D) {
   const el = document.getElementById("agentMap");
   if (!el) return;
-  if (AGENT_MAP) { AGENT_MAP.destroy(); AGENT_MAP = null; }
+  if (AGENT_MAP) { try { AGENT_MAP.destroy(); } catch {} AGENT_MAP = null; }
 
   const status = await loadNaverMaps();
   // 모달이 닫혔거나 다른 담당으로 이동한 사이 로딩이 끝났을 수 있으니 다시 확인한다.
@@ -2581,7 +2551,7 @@ async function initAgentMap(D) {
   // 원인을 알려주는 안내를 보여준다.
   await new Promise((r) => setTimeout(r, 60));
   if (window.__NAVER_AUTH_FAILED) {
-    if (AGENT_MAP) { AGENT_MAP.destroy(); AGENT_MAP = null; }
+    if (AGENT_MAP) { try { AGENT_MAP.destroy(); } catch {} AGENT_MAP = null; }
     if (document.getElementById("agentMap")) el.innerHTML = naverMapErrorHtml("auth");
     return;
   }

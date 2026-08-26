@@ -24,6 +24,15 @@
 1. `node orchestrator/call-agent --serve` 로 서버를 켠다 (기본 8788 포트)
 2. `딸깍 서비스.html`을 열고 폼에 출장 정보를 입력한 뒤 실행 버튼을 누른다
 
+### 3) 데모/녹화용 — API 토큰 없이 실행
+
+`ANTHROPIC_API_KEY` 없이(비용 없이) 화면 동작만 그대로 보여주고 싶을 때 `call-agent` 대신 아래를 켠다.
+
+1. `node orchestrator/mock-server.js --serve` (동일하게 기본 8788 포트, `.env`/API 키 불필요)
+2. `딸깍 서비스.html`을 평소처럼 열고 사용한다 — 5단계 진행 애니메이션·결과 화면이 실제 서버와 똑같이 동작하지만, 결과는 AI 판단이 아니라 폼 입력값을 그대로 계산한 근사치다 (`buildFallbackData()`와 동일한 계산 로직)
+
+> 참고: 실제 AI가 계산한 진짜 결과가 필요하면(근사치 말고), `.env`의 `USE_LOCAL_CLAUDE=1`로 로컬에 로그인된 Claude Code 구독을 대신 쓰는 방법도 있다(API 토큰 소진 시 우회용으로 이미 추가되어 있음).
+
 ## 폴더 구성
 
 | 폴더 | 역할 |

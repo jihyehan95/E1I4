@@ -160,18 +160,23 @@ async function naverGeocode(creds, query) {
   try {
     const url = `${NAVER_MAPS_BASE}/map-geocode/v2/geocode?query=${encodeURIComponent(query.trim())}`;
     const res = await fetch(url, { headers: naverHeaders(creds) });
-    if (!res.ok) return null;
-    const body = await res.json();
-    const addr = (body.addresses || [])[0];
-    if (!addr) return null;
-    return {
-      lat: Number(addr.y),
-      lng: Number(addr.x),
-      roadAddress: addr.roadAddress || addr.jibunAddress || query.trim(),
-    };
-  } catch {
-    return null;
-  }
+    if (res.ok) {
+      const body = await res.json();
+      const addr = (body.addresses || [])[0];
+      if (addr) {
+        return {
+          lat: Number(addr.y),
+          lng: Number(addr.x),
+          roadAddress: addr.roadAddress || addr.jibunAddress || query.trim(),
+        };
+      }
+    }
+  } catch {}
+  // 네이버 Geocoding은 정확한 주소만 인식해 장소명(POI)이 섞인 질의는 0건이 흔하다 — 그럴 때만
+  // 무료 Nominatim으로 보강한다(첫 후보만 사용, 검색 자동완성의 폴백과 동일한 원리).
+  const fallback = (await nominatimCandidates(query.trim()))[0];
+  if (!fallback) return null;
+  return { lat: Number(fallback.lat), lng: Number(fallback.lon), roadAddress: fallback.display_name || query.trim() };
 }
 
 // 화면 장소 검색 자동완성(옛 Nominatim 대체)용 — 후보 여러 개를 그대로 돌려준다.
@@ -187,6 +192,21 @@ async function naverGeocodeCandidates(creds, query) {
       lon: Number(a.x),
       display_name: a.roadAddress || a.jibunAddress || a.englishAddress || query.trim(),
     }));
+  } catch {
+    return [];
+  }
+}
+
+// 네이버 Geocoding은 정확한 주소만 인식하고 "부산대학교" 같은 장소명(POI)은 대부분 못 찾는다.
+// 화면 자동완성만큼은 장소명도 잘 찾아주던 옛 Nominatim(무료)으로 보강한다 — 최종 좌표 확정은
+// 여전히 geocodeFormVisits()가 사용자가 고른 주소로 네이버 Geocoding을 다시 호출해서 한다.
+async function nominatimCandidates(query) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&accept-language=ko&q=${encodeURIComponent(query)}`;
+    const res = await fetch(url, { headers: { "User-Agent": "ddalkkak-service/1.0" } });
+    if (!res.ok) return [];
+    const body = await res.json();
+    return Array.isArray(body) ? body : [];
   } catch {
     return [];
   }
@@ -884,10 +904,13 @@ function runServer(port) {
 
     if (req.method === "GET" && req.url.startsWith("/api/geocode")) {
       // 화면 장소 검색(옛 Nominatim 직접 호출)을 대신하는 서버 프록시 — 시크릿이 브라우저로 나가지 않는다.
+      // 네이버 Geocoding은 정확한 주소만 인식해 장소명(POI) 검색 결과가 0건인 경우가 많으므로,
+      // 그럴 때만 무료 Nominatim으로 보강한다(네이버 결과가 있으면 그대로 우선 사용).
       try {
         const query = new URL(req.url, `http://localhost`).searchParams.get("q") || "";
         const creds = readNaverCredentials(ENV_PATH);
-        const list = await naverGeocodeCandidates(creds, query);
+        let list = await naverGeocodeCandidates(creds, query);
+        if (!list.length && query.trim()) list = await nominatimCandidates(query.trim());
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(list));
       } catch (error) {
