@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>딸깍 AI</title>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--text:#172033;--muted:#6d7480;--line:#e7e9ee;--blue:#4f7df3;--blue-soft:#eef3ff;--shadow:0 12px 36px rgba(35,45,65,.08)}
+*{box-sizing:border-box} html{scroll-behavior:smooth} body{margin:0;font-family:Inter,Pretendard,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);background:linear-gradient(180deg,#fafbfc,#f4f6f9)}
+a{text-decoration:none;color:inherit}.container{max-width:1180px;margin:auto;padding:0 28px}
+nav{height:74px;display:flex;align-items:center;justify-content:space-between}.brand{display:flex;align-items:center;gap:10px;font-weight:900;font-size:22px}
+.brand-mark{width:30px;height:30px;border-radius:9px;background:#111827}.menu{display:flex;gap:28px;font-size:14px;font-weight:700;color:#525866}
+.cta-sm,.btn-primary,.btn-secondary{border-radius:999px;padding:13px 20px;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
+.cta-sm,.btn-primary{background:var(--blue);color:#fff}.btn-secondary{border:1px solid #d9dde6;background:#fff}
+.hero{display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center;padding:70px 0 86px}.eyebrow{font-size:13px;font-weight:800;color:#9aa3b2;letter-spacing:.08em}
+.hero h1{font-size:58px;line-height:1.08;margin:16px 0 22px;letter-spacing:-.04em}.hero h1 span,.section h2 span{color:var(--blue)}.hero p{font-size:20px;line-height:1.7;color:var(--muted);margin-bottom:28px}
+.hero-actions{display:flex;gap:12px;margin-bottom:28px}.metrics{display:flex;gap:30px;color:#606775;font-size:14px}.metrics b{color:#2d3748}
+.mock,.demo-card,.result-card,.agent{background:var(--panel);border:1px solid var(--line);box-shadow:var(--shadow)}
+.mock{border-radius:22px;padding:18px}.mock-top{display:flex;align-items:center;justify-content:space-between;padding:8px 8px 18px}.dotbar{display:flex;gap:7px}.dot{width:9px;height:9px;border-radius:50%;background:#d5d9e1}
+.mock-body{display:grid;grid-template-columns:145px 1fr;min-height:390px}.sidebar{border-right:1px solid var(--line);padding:10px}.side-item{padding:11px 12px;border-radius:10px;color:#7b8391;font-size:13px;font-weight:700;margin-bottom:6px}.side-item.active{background:var(--blue-soft);color:var(--blue)}
+.form{padding:24px}.form h3{margin:0 0 5px;font-size:24px}.form p{margin:0 0 20px;color:#8b92a0;font-size:13px}.field{display:grid;grid-template-columns:70px 1fr;align-items:center;margin-bottom:12px}.field label{font-size:13px;font-weight:800}.field div{background:#f7f8fa;border:1px solid #eceff3;border-radius:9px;padding:11px 12px;font-size:14px}.big-click{margin-top:18px;background:var(--blue);color:#fff;border-radius:10px;text-align:center;padding:14px;font-weight:900}
+.section{padding:84px 0}.section.alt{background:#f2f4f7}.section-head{display:flex;align-items:end;justify-content:space-between;gap:30px;margin-bottom:34px}.section h2{font-size:40px;line-height:1.18;margin:0;letter-spacing:-.035em}.section-desc{max-width:460px;color:var(--muted);line-height:1.7}
+.problem-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:12px}.icon-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px 10px;text-align:center}.icon{font-size:28px;margin-bottom:10px;filter:grayscale(1);opacity:.8}.icon-card b{font-size:13px}
+.agent-flow{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}.agent{position:relative;border-radius:18px;padding:22px;min-height:170px}.agent:not(:last-child):after{content:"›";position:absolute;right:-12px;top:50%;transform:translateY(-50%);color:#aab2c0;font-size:30px}.num{font-size:12px;background:#eef1f5;border-radius:999px;padding:5px 8px;display:inline-block;color:#737b89;font-weight:800}.agent-icon{font-size:30px;margin:18px 0 12px;filter:grayscale(1)}.agent h3{margin:0 0 8px;font-size:17px}.agent p{margin:0;color:#7c8492;font-size:13px;line-height:1.5}
+.demo{display:grid;grid-template-columns:1fr 70px 1fr;gap:20px;align-items:center}.demo-card{border-radius:18px;padding:24px}.demo-arrow{text-align:center;font-size:40px;color:var(--blue)}
+.status-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #eef0f3}.status-row:last-child{border-bottom:0}.badge{font-size:12px;font-weight:800;padding:5px 9px;border-radius:999px}.done{color:#1c9b67;background:#e9f8f1}.running{color:#2e6ae8;background:#edf3ff}.waiting{color:#8b92a0;background:#f1f3f5}
+.results{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.result-card{border-radius:16px;padding:18px;min-height:180px}.result-card h3{font-size:16px;margin:0 0 14px}.fake-lines{display:grid;gap:8px}.fake-lines span{height:9px;background:#eceff3;border-radius:999px}.fake-lines span:nth-child(2){width:78%}.fake-lines span:nth-child(3){width:62%}
+.quote{display:grid;grid-template-columns:1fr 1fr;gap:36px;align-items:center}.quote-card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:30px;font-size:18px;line-height:1.8;color:#4d5563}
+.final-cta{margin:70px auto 28px;padding:36px 40px;border-radius:22px;background:linear-gradient(90deg,#eef3ff,#f8faff);display:flex;justify-content:space-between;align-items:center;gap:30px}.final-cta h3{font-size:30px;margin:0;line-height:1.25}
+footer{padding:32px 0 46px;color:#8a92a0;font-size:13px;display:flex;justify-content:space-between}
+@media(max-width:900px){.menu{display:none}.hero{grid-template-columns:1fr}.hero h1{font-size:46px}.problem-grid{grid-template-columns:repeat(2,1fr)}.agent-flow{grid-template-columns:1fr}.agent:not(:last-child):after{content:"↓";right:auto;left:50%;top:auto;bottom:-21px;transform:translateX(-50%)}.demo{grid-template-columns:1fr}.demo-arrow{transform:rotate(90deg)}.results{grid-template-columns:1fr 1fr}.quote{grid-template-columns:1fr}.final-cta{flex-direction:column;align-items:flex-start}}
+@media(max-width:620px){.container{padding:0 18px}.hero h1{font-size:38px}.section h2{font-size:32px}.results{grid-template-columns:1fr}.metrics{flex-direction:column;gap:8px}}
+</style>
+</head>
+<body>
+<header class="container"><nav>
+<a class="brand" href="#"><span class="brand-mark"></span>딸깍 AI</a>
+<div class="menu"><a href="#problem">서비스 소개</a><a href="#agents">작동 방식</a><a href="#agents">Agent 소개</a><a href="#results">활용 사례</a><a href="#">가격 안내</a></div>
+<a class="cta-sm" href="딸깍 서비스.html">딸깍 시작하기 →</a>
+</nav></header>
+
+<main>
+<section class="container hero">
+<div>
+<div class="eyebrow">AI OFFICE AUTOMATION</div>
+<h1>귀찮은 출장 업무,<br><span>딸깍</span> 한 번이면 끝.</h1>
+<p>출장 기획부터 일정, 동선, 경비, 보고서까지<br>5개의 AI Agent가 알아서 이어서 처리합니다.</p>
+<div class="hero-actions"><a class="btn-primary" href="딸깍 서비스.html">딸깍 시작하기 →</a><a class="btn-secondary" href="#agents">서비스 소개 보기</a></div>
+<div class="metrics"><span>⚡ 업무 시간 <b>최대 80% 절감</b></span><span>👥 <b>누구나 쉽게</b></span><span>✓ 기획부터 보고서까지 <b>한 번에</b></span></div>
+</div>
+<div class="mock">
+<div class="mock-top"><b>딸깍 AI</b><div class="dotbar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div></div>
+<div class="mock-body">
+<div class="sidebar"><div class="side-item">대시보드</div><div class="side-item active">출장 요청</div><div class="side-item">진행 현황</div><div class="side-item">결과물</div><div class="side-item">설정</div></div>
+<div class="form"><h3>출장 요청</h3><p>출장 정보를 입력하면 AI가 알아서 처리해요.</p>
+<div class="field"><label>목적</label><div>고객사 방문</div></div><div class="field"><label>지역</label><div>제주도</div></div><div class="field"><label>기간</label><div>2박 3일</div></div><div class="field"><label>인원</label><div>5명</div></div><div class="big-click">딸깍! →</div></div>
+</div></div>
+</section>
+
+<section class="section alt" id="problem"><div class="container">
+<div class="section-head"><h2>출장 한 번 가려는데,<br>왜 할 일이 이렇게 많죠?</h2><p class="section-desc">항공, 숙소, 일정, 동선, 회식 장소, 경비, 보고서까지. 이 모든 일을 여전히 사람이 하나씩 하고 있습니다.</p></div>
+<div class="problem-grid">
+<div class="icon-card"><div class="icon">✈️</div><b>항공·교통 검색</b></div><div class="icon-card"><div class="icon">🏢</div><b>숙소 찾기</b></div><div class="icon-card"><div class="icon">📅</div><b>일정 조율</b></div><div class="icon-card"><div class="icon">📍</div><b>동선 짜기</b></div><div class="icon-card"><div class="icon">🍽️</div><b>회식 장소</b></div><div class="icon-card"><div class="icon">💰</div><b>경비 계산</b></div><div class="icon-card"><div class="icon">📄</div><b>보고서 작성</b></div>
+</div></div></section>
+
+<section class="section" id="agents"><div class="container">
+<div class="section-head"><h2>그래서 <span>딸깍</span>은<br>하나의 업무 흐름으로 연결했습니다.</h2><p class="section-desc">각 Agent가 자신의 업무를 처리한 뒤 결과를 다음 Agent에게 넘겨줍니다.</p></div>
+<div class="agent-flow">
+<div class="agent"><span class="num">01</span><div class="agent-icon">📋</div><h3>기획 Agent</h3><p>출장 목적과 조건을 구조화하고 필요한 작업을 정의합니다.</p></div>
+<div class="agent"><span class="num">02</span><div class="agent-icon">📍</div><h3>장소 Agent</h3><p>출장지와 조건에 맞는 장소 후보를 탐색합니다.</p></div>
+<div class="agent"><span class="num">03</span><div class="agent-icon">📅</div><h3>일정 Agent</h3><p>일정과 이동 시간을 반영해 최적 동선을 만듭니다.</p></div>
+<div class="agent"><span class="num">04</span><div class="agent-icon">💰</div><h3>경비 Agent</h3><p>예상 비용을 계산하고 예산을 점검합니다.</p></div>
+<div class="agent"><span class="num">05</span><div class="agent-icon">📄</div><h3>보고서 Agent</h3><p>최종 결과를 실제 업무 문서 형식으로 완성합니다.</p></div>
+</div></div></section>
+
+<section class="section alt" id="demo"><div class="container">
+<div class="section-head"><h2>입력은 이것뿐이에요.</h2><p class="section-desc">한 번의 요청으로 Agent들이 순서대로 일을 이어받습니다.</p></div>
+<div class="demo">
+<div class="demo-card"><h3>출장 요청 입력</h3><div class="field"><label>목적</label><div>고객사 방문</div></div><div class="field"><label>지역</label><div>제주도</div></div><div class="field"><label>기간</label><div>2박 3일</div></div><div class="field"><label>인원</label><div>5명</div></div><div class="big-click">딸깍!</div></div>
+<div class="demo-arrow">→</div>
+<div class="demo-card"><h3>AI가 업무를 처리하고 있어요!</h3><div class="status-row"><span>기획 Agent</span><span class="badge done">완료</span></div><div class="status-row"><span>장소 Agent</span><span class="badge done">완료</span></div><div class="status-row"><span>일정 Agent</span><span class="badge running">처리 중…</span></div><div class="status-row"><span>경비 Agent</span><span class="badge waiting">대기 중</span></div><div class="status-row"><span>보고서 Agent</span><span class="badge waiting">대기 중</span></div></div>
+</div></div></section>
+
+<section class="section" id="results"><div class="container">
+<div class="section-head"><h2>이런 결과물을 받을 수 있어요.</h2><p class="section-desc">업무 흐름의 마지막에는 실제로 바로 활용할 수 있는 결과물이 남습니다.</p></div>
+<div class="results">
+<div class="result-card"><h3>출장 일정표</h3><div class="fake-lines"><span></span><span></span><span></span><span></span></div></div>
+<div class="result-card"><h3>숙소·장소 예약 내역</h3><div style="height:82px;border-radius:12px;background:linear-gradient(135deg,#d9dde5,#eef1f5);margin-bottom:14px"></div><b>제주 오션뷰 호텔</b><p style="color:#7e8693;font-size:13px">2박 3일 · 예약 완료</p></div>
+<div class="result-card"><h3>경비 정산 내역</h3><div class="status-row"><span>항공권</span><b>450,000</b></div><div class="status-row"><span>숙소</span><b>320,000</b></div><div class="status-row"><span>교통비</span><b>120,000</b></div></div>
+<div class="result-card"><h3>출장 보고서</h3><div class="fake-lines"><span></span><span></span><span></span><span></span></div><div style="margin-top:20px" class="badge running">보고서 다운로드 ↓</div></div>
+</div></div></section>
+
+<section class="section alt"><div class="container quote">
+<div><div class="eyebrow">CUSTOMER STORY</div><h2>이미 많은 팀이<br>딸깍과 함께하고 있어요.</h2></div>
+<div class="quote-card">“출장 준비에만 반나절이 걸렸는데, 이제는 딸깍 한 번으로 끝나요. 정말 업무가 가벼워졌습니다.”<br><small style="color:#9aa1ad">— IT 스타트업 운영팀</small></div>
+</div></section>
+
+<section class="container final-cta"><h3>반복되는 업무는 <span style="color:var(--blue)">딸깍</span>에게.<br>우리는 더 중요한 일에 집중할 수 있도록.</h3><a class="btn-primary" href="딸깍 서비스.html">지금 딸깍하기 →</a></section>
+</main>
+
+<footer class="container"><div><b style="color:#333">딸깍 AI</b> · 복잡한 업무, 딸깍 한 번으로!</div><div>이용약관 · 개인정보처리방침 · 문의하기</div></footer>
+</body>
+</html>
