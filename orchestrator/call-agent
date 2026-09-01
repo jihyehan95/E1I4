@@ -979,6 +979,25 @@ function runServer(port) {
       return;
     }
 
+    if (req.method === "GET" && req.url.startsWith("/health")) {
+      // 배포 환경변수가 실제로 서버 프로세스에 들어왔는지 값 노출 없이(있음/없음만) 확인하는 진단용 엔드포인트.
+      // Render 무료 플랜은 Shell(printenv)이 막혀 있어, 이 엔드포인트로 대신 확인한다.
+      let hasAnthropicApiKey = false;
+      try {
+        readApiKeyFromEnvFile(ENV_PATH);
+        hasAnthropicApiKey = true;
+      } catch {
+        hasAnthropicApiKey = false;
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        hasAnthropicApiKey,
+        useLocalClaude: isLocalClaudeEnabled(ENV_PATH),
+        hasNaverMapCreds: Boolean(readNaverCredentials(ENV_PATH)),
+      }));
+      return;
+    }
+
     if (req.method === "GET" && req.url.startsWith("/api/geocode")) {
       // 화면 장소 검색(옛 Nominatim 직접 호출)을 대신하는 서버 프록시 — 시크릿이 브라우저로 나가지 않는다.
       // 네이버 Geocoding은 정확한 주소만 인식해 장소명(POI) 검색 결과가 0건인 경우가 많으므로,
