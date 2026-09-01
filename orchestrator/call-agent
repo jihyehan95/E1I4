@@ -412,6 +412,17 @@ function formatBudgetRule(rule) {
   return parts.join(", ");
 }
 
+// 사용자가 적은 참고/추가 조건(출발시각·교통편 선호·숙소 검색 기준 등)은 판단에만 쓰라고
+// 넘기는 것이지, 최종 문서에 원문 그대로 옮겨 적으라는 뜻이 아니다 — 안 붙이면 에이전트가
+// 자기 reason/note에 이 원문을 그대로 인용해 최종 보고서 맨 아래에 그대로 노출되곤 했다.
+function conditionsSection(title, text) {
+  if (!text) return "";
+  return section(
+    title,
+    `${text}\n\n(※ 이 내용은 계산·판단에만 참고하고, reason·note 등 최종 결과에 노출되는 항목에 이 원문을 그대로 옮기지 마라. 이 내용을 반영한 결과 자체만 표시해라.)`,
+  );
+}
+
 function buildPlanInput(form) {
   if (form.customForm) {
     // 자사 양식 경로: 표준 필드에 매핑하지 않고, 양식이 요구한 항목을 그대로 전달한다.
@@ -444,7 +455,7 @@ function buildPlanInput(form) {
     ),
     section("출장비 규정 (화면 경비 기준 설정값, 그대로 적용)", formatBudgetRule(form.budgetRule)),
     section("call-agent가 사전 확인한 실측 좌표 (Naver Geocoding — 있으면 그대로 쓰고, 없는 지점만 추정)", form._geocodeCoordsText),
-    section("참고/추가 조건", form.conditions),
+    conditionsSection("참고/추가 조건", form.conditions),
     section("작성자", form.author),
   ]
     .filter(Boolean)
@@ -488,7 +499,7 @@ function buildBudgetInput(scheduleText, planText, routeText, form) {
     section("schedule 결과 (일정)", scheduleText) +
     section("plan 결과 (출장비 규정·예산 상한)", planText) +
     section("route 결과 (교통편·숙박·식당 후보와 예상 비용 — '예상 사용 금액' 계산에 그대로 쓴다)", routeText) +
-    section("숙소/교통 관련 참고", form.conditions)
+    conditionsSection("숙소/교통 관련 참고", form.conditions)
   );
 }
 
@@ -598,7 +609,9 @@ async function aggregateStage(client, stageName, stageResult, useLocal = false) 
     "텍스트에 있는 값만 사용해라. 텍스트에 없는 값은 지어내지 말고, 알 수 없으면 빈 문자열이나 빈 배열로 둬라. " +
     "숫자 필드(peopleTotal, ruleAmount, estimatedAmount, ruleTotal, estimatedTotal, unitPrice, budgetLimit 등)는 콤마를 뺀 순수 숫자로 넣어라. " +
     "budget 단계의 ruleAmount/ruleTotal은 '경비 기준 설정'(인당 한도 규정)으로 계산한 기준금액, estimatedAmount/estimatedTotal은 route 단계가 조사한 실제 후보로 계산한 예상 사용 금액이다 — 서로 다른 계산이니 섞지 마라. " +
-    "'(추정)'이라고 표시된 값은 그 표시를 값 문자열에 그대로 남겨서, 실측값과 구분되게 해라.";
+    "'(추정)'이라고 표시된 값은 그 표시를 값 문자열에 그대로 남겨서, 실측값과 구분되게 해라. " +
+    "reason/note 필드는 반드시 한두 줄 요약만 넣어라 — 사용자가 입력한 참고사항·요청사항 원문을 그대로 옮겨 적지 마라. " +
+    "그 내용을 반영한 판단 결과나 이유만 짧게 적어라.";
 
   const body = `### ${stageName} (state: ${stageResult.state})\n\n${stageResult.text}`;
 
@@ -794,8 +807,20 @@ const TemplateFieldZ = z.object({
   hint: z.string(),
   type: z.enum(["text", "textarea", "date", "number"]),
 });
+// 최종 문서를 업로드한 양식과 같은 모양으로 그리기 위한 "틀" 정보 — 입력 항목(fields)과는 별개다.
+// headerLabels: 승인란(담당/팀장/부서장 등 서명칸) 빼고, 기안부서·기안자·출장기간처럼 표로 나열된 메타 항목명.
+// sections: 본문에 번호로 나열된 절 제목과, 그 절이 서술형 문단인지(text) 표(table)인지·표라면 열 이름.
+// closingText: 맨 끝의 상투 문구(예: "위와 같이 출장을 실시하고자 하오니...") — 없으면 빈 문자열.
+const OutlineSectionZ = z.object({
+  title: z.string(),
+  kind: z.enum(["text", "table"]),
+  columns: z.array(z.string()),
+});
 const TemplateParseZ = z.object({
   fields: z.array(TemplateFieldZ),
+  headerLabels: z.array(z.string()),
+  sections: z.array(OutlineSectionZ),
+  closingText: z.string(),
   confidence: z.enum(["high", "low"]),
   note: z.string(),
 });
@@ -820,30 +845,41 @@ function extractZipDocumentText(base64) {
 
 async function parseTemplate(client, { fileName, mediaType, base64 }) {
   const system =
-    "너는 회사 자체 업무/출장 신청 양식에서 사용자가 실제로 채워야 하는 입력 항목만 뽑아내는 담당이다. " +
+    "너는 회사 자체 업무/출장 신청 양식(기안문)을 분석해서 두 가지를 뽑아내는 담당이다: " +
+    "(A) 사용자가 실제로 입력해야 하는 항목(fields), (B) 완성된 문서의 틀(headerLabels/sections/closingText) — " +
+    "이 문서와 똑같은 모양으로 최종 결과물을 다시 그릴 때 쓴다.\n\n" +
+    "(A) fields — 입력 항목:\n" +
     "안내문·서명란·직인란·예시 문구는 항목으로 넣지 마라. " +
     "각 항목은 id(영문 소문자·숫자·언더스코어, 문서 내에서 서로 겹치지 않게), label(회사 양식에 실제로 적힌 항목명 그대로), " +
     "hint(입력 예시나 설명, 없으면 빈 문자열), type(text/textarea/date/number 중 하나 — " +
-    "날짜는 date, 긴 서술형은 textarea, 금액·인원 등 숫자는 number, 그 외는 text)로 만들어라. " +
-    "문서 내용을 읽지 못했거나 입력 항목을 알아볼 수 없으면 fields를 빈 배열로 하고 confidence를 low로, " +
-    "note에 이유를 한 줄로 적어라. 정상적으로 항목을 뽑아냈으면 confidence는 high로 하고 note는 빈 문자열로 둬라.";
+    "날짜는 date, 긴 서술형은 textarea, 금액·인원 등 숫자는 number, 그 외는 text)로 만들어라.\n\n" +
+    "(B) 문서 틀:\n" +
+    "- headerLabels: 문서 맨 위에 표로 나열된 메타 항목명(예: 기안부서, 기안자, 기안일자, 출장구분, 출장기간, 출장지역, 출장자, 방문처). " +
+    "결재란(담당/팀장/부서장 같은 서명·직인용 빈 칸)은 제외해라.\n" +
+    "- sections: 본문에 번호(1., 2. 등)로 나열된 절 제목을 그 순서 그대로, 각 절이 서술형 문단(kind: \"text\")인지 " +
+    "표(kind: \"table\")인지 판단해서 적어라. 표면 columns에 그 표의 열 이름을 순서대로 적어라(예: 일정 표면 [\"일자\",\"시간\",\"주요 내용\"], " +
+    "경비 표면 [\"구분\",\"산출 근거\",\"금액\"]). text면 columns는 빈 배열.\n" +
+    "- closingText: 문서 맨 끝의 상투적인 마무리 문구(예: \"위와 같이 출장을 실시하고자 하오니 검토 후 승인하여 주시기 바랍니다.\")를 " +
+    "그대로 옮겨 적어라. 없으면 빈 문자열.\n\n" +
+    "문서 내용을 읽지 못했거나 항목을 알아볼 수 없으면 fields/headerLabels/sections를 모두 빈 배열로, closingText도 빈 문자열로 하고 " +
+    "confidence를 low로, note에 이유를 한 줄로 적어라. 정상적으로 뽑아냈으면 confidence는 high로 하고 note는 빈 문자열로 둬라.";
 
   const lower = (fileName || "").toLowerCase();
   let content;
   if (mediaType === "application/pdf") {
     content = [
       { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
-      { type: "text", text: "이 문서는 회사 자체 업무 신청 양식이다. 위 지시대로 입력 항목을 뽑아라." },
+      { type: "text", text: "이 문서는 회사 자체 업무 신청 양식이다. 위 지시대로 입력 항목과 문서 틀을 뽑아라." },
     ];
   } else if (mediaType && mediaType.startsWith("image/")) {
     content = [
       { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
-      { type: "text", text: "이 이미지는 회사 자체 업무 신청 양식이다. 위 지시대로 입력 항목을 뽑아라." },
+      { type: "text", text: "이 이미지는 회사 자체 업무 신청 양식이다. 위 지시대로 입력 항목과 문서 틀을 뽑아라." },
     ];
   } else if (lower.endsWith(".docx") || lower.endsWith(".hwpx")) {
     const text = extractZipDocumentText(base64);
     content = text
-      ? `다음은 회사 자체 업무 신청 양식(${fileName})에서 추출한 본문 텍스트다. 위 지시대로 입력 항목을 뽑아라.\n\n${text}`
+      ? `다음은 회사 자체 업무 신청 양식(${fileName})에서 추출한 본문 텍스트다. 위 지시대로 입력 항목과 문서 틀을 뽑아라.\n\n${text}`
       : `회사 자체 업무 신청 양식 파일(${fileName})에서 본문을 추출하지 못했다. fields는 빈 배열로, confidence는 low로 답해라.`;
   } else {
     // 구버전 .hwp(바이너리) 등 서버에서 본문 추출이 불가능한 형식 — 파일명만 참고 가능

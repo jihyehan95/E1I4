@@ -677,6 +677,27 @@
       from{opacity:0; transform:translateY(12px)}
       to{opacity:1; transform:translateY(0)}
     }
+    .report-download-bar{
+      display:flex;
+      gap:8px;
+      justify-content:flex-end;
+      margin:10px 0;
+    }
+    /* PDF로 다운로드 — window.print()를 부를 때 이 클래스를 body에 붙여서
+       리포트 카드만 남기고 나머지 화면(폼·오피스팀·버튼 등)은 인쇄에서 뺀다. */
+    @media print{
+      body.printing-report *{ visibility:hidden; }
+      body.printing-report .report-preview,
+      body.printing-report .report-preview *{ visibility:visible; }
+      body.printing-report .report-preview{
+        position:absolute; left:0; top:0; width:100%;
+        display:block !important;
+      }
+      body.printing-report .report-page{
+        box-shadow:none; border:none;
+        page-break-after:always;
+      }
+    }
     .run-message{
       margin-top:16px;
       padding:14px 16px;
@@ -934,7 +955,7 @@
   <p class="m-sub-head" id="agentDetailSub"></p>
   <div id="agentDetailBody"></div>
 </div>
-<div class="card results-card"><h2>최종 결과 Preview</h2><p class="muted">Document Agent가 앞선 Agent 결과를 모아 실제 업무용 출장/현장심사 계획서 형태로 완성합니다.</p><div class="run-message" id="runMessage">아직 실행 전이에요. ‘AI 업무 계획 생성’을 누르면 5개 Agent가 순서대로 작업합니다.</div><div class="report-preview report-hidden" id="reportPreview"></div></div>
+<div class="card results-card"><h2>최종 결과 Preview</h2><p class="muted">Document Agent가 앞선 Agent 결과를 모아 실제 업무용 출장/현장심사 계획서 형태로 완성합니다.</p><div class="run-message" id="runMessage">아직 실행 전이에요. ‘AI 업무 계획 생성’을 누르면 5개 Agent가 순서대로 작업합니다.</div><div class="report-download-bar report-hidden" id="reportDownloadBar"><button type="button" class="btn secondary" onclick="downloadReportPdf()">📄 PDF로 다운로드</button><button type="button" class="btn secondary" onclick="downloadReportWord()">📝 Word로 다운로드</button></div><div class="report-preview report-hidden" id="reportPreview"></div></div>
 </section>
 </main>
 </div>
@@ -1266,6 +1287,8 @@ function handleTemplateDrop(event) {
 }
 
 let customParsedFields = [];
+// 최종 문서를 업로드한 자사양식과 같은 모양으로 그리는 데 쓰는 "틀" — startCustomTemplateParse()가 채운다.
+let CUSTOM_FORM_OUTLINE = { headerLabels: [], sections: [], closingText: "" };
 
 // AI가 뽑아낸 항목(회사 양식에 실제로 적힌 이름 그대로)으로 입력칸을 만든다.
 function renderDynamicFields(fields, confidence, note) {
@@ -1318,6 +1341,11 @@ async function startCustomTemplateParse() {
     });
     const payload = await res.json();
     if (!res.ok || payload.error) throw new Error(payload.error || `서버 오류 (${res.status})`);
+    CUSTOM_FORM_OUTLINE = {
+      headerLabels: payload.headerLabels || [],
+      sections: payload.sections || [],
+      closingText: payload.closingText || "",
+    };
     renderDynamicFields(payload.fields || [], payload.confidence, payload.note);
   } catch (err) {
     if (status) {
@@ -1648,6 +1676,111 @@ function buildFallbackDataFromCustomForm() {
   };
 }
 
+// 자사양식 문서 틀(CUSTOM_FORM_OUTLINE)로 최종 문서를 그린다 — 업로드한 양식과 같은
+// 헤더 항목·절 제목·순서·표 모양으로 재구성한다. 값은 사용자가 입력한 답변을 우선 쓰고,
+// 없으면 파이프라인이 계산한 값(일정·경비·방문지 등)으로 채운다.
+function buildCustomOutlineReportHtml(d) {
+  const plan = d.plan || {}, route = d.route || {}, sch = d.schedule || {}, bud = d.budget || {}, doc = d.document || {};
+  const period = plan.period || {};
+  const answers = LAST_CUSTOM_FORM_ANSWERS || [];
+
+  const findAnswer = (keywords) => {
+    const hit = answers.find(a => a.value && a.value.trim() && keywords.some(k => a.label.includes(k)));
+    return hit ? hit.value.trim() : "";
+  };
+
+  // 헤더 표(기안부서·기안자·출장기간 등) 값 — 사용자가 입력한 답변을 최우선으로 쓰고,
+  // 못 찾으면 흔한 라벨명 기준으로 파이프라인 계산값을 대신 채운다.
+  const headerValue = (label) => {
+    const direct = answers.find(a => a.label === label && a.value && a.value.trim());
+    if (direct) return direct.value.trim();
+    if (/기간/.test(label)) return `${formatDate(period.start)} ~ ${formatDate(period.end)}`;
+    if (/지역/.test(label)) return plan.region || "";
+    if (/구분/.test(label)) return plan.taskType || "";
+    if (/(방문처|방문\s*기관|목적지)/.test(label)) return (route.visits || []).map(v => v.name).join(", ");
+    if (/(출장자|참석자|인원)/.test(label)) {
+      if (plan.personnel && plan.personnel.length) return plan.personnel.map(p => `${p.org} ${p.count}명`).join(", ");
+      return plan.peopleTotal ? `총 ${plan.peopleTotal}명` : "";
+    }
+    if (/(기안일|작성일|신청일)/.test(label)) return doc.createdAt || new Date().toISOString().slice(0, 10);
+    if (/(기안자|작성자|신청자)/.test(label)) return doc.author || plan.author || "";
+    if (/부서/.test(label)) return plan.projectName || "";
+    return findAnswer([label]);
+  };
+
+  const headerRows = (CUSTOM_FORM_OUTLINE.headerLabels || []).map(label => `
+    <tr><td style="width:22%;font-weight:700;background:#f7f7f7">${esc(label)}</td><td>${esc(headerValue(label))}</td></tr>
+  `).join("");
+
+  // 표 절의 열 이름으로 "일정 표"인지 "경비 표"인지 판단한다. 못 알아보면 방문지 표로 대체한다.
+  const isScheduleTable = (cols, title) => /(일자|시간|일정)/.test((cols || []).join("") + title);
+  const isBudgetTable = (cols, title) => /(금액|비용|예산|경비|근거)/.test((cols || []).join("") + title);
+
+  const scheduleRows = sch.rows || [];
+  const budRows = bud.rows || [];
+  const allVisits = route.visits || [];
+  const estimatedTotal = bud.estimatedTotal ?? bud.ruleTotal ?? 0;
+
+  const renderTableSection = (section) => {
+    const cols = section.columns && section.columns.length ? section.columns : null;
+    if (isScheduleTable(section.columns, section.title)) {
+      const headers = cols || ["일자", "시간", "주요 내용"];
+      const rows = scheduleRows.length ? scheduleRows.map(r => `
+        <tr><td>${esc(r.date || "")}</td><td>${esc(r.time || "")}</td><td>${esc(r.work || r.place || "")}</td></tr>
+      `).join("") : `<tr><td colspan="${headers.length}">일정이 없습니다.</td></tr>`;
+      return `<table class="report-table"><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
+    }
+    if (isBudgetTable(section.columns, section.title)) {
+      const headers = cols || ["구분", "산출 근거", "금액"];
+      const rows = budRows.length ? budRows.map(r => `
+        <tr><td>${esc(r.name || "")}</td><td>${esc(r.estimatedFormula || r.ruleFormula || "")}</td><td style="text-align:right">${(r.estimatedAmount || 0).toLocaleString()}원</td></tr>
+      `).join("") : `<tr><td colspan="${headers.length}">경비 항목이 없습니다.</td></tr>`;
+      const sumRow = `<tr style="font-weight:800;background:#fafafa"><td colspan="${headers.length - 1}">합계</td><td style="text-align:right">${estimatedTotal.toLocaleString()}원</td></tr>`;
+      return `<table class="report-table"><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows}${sumRow}</tbody></table>`;
+    }
+    // 못 알아본 표 — 방문지 목록으로 대체
+    const headers = cols || ["연번", "대상지명", "소재지", "주요업무"];
+    const rows = allVisits.length ? allVisits.map(v => `
+      <tr><td>${v.no}</td><td>${esc(v.name)}</td><td>${esc(v.address || "")}</td><td>${esc(v.excluded ? "제외" : "현장 확인 및 업무 수행")}</td></tr>
+    `).join("") : `<tr><td colspan="${headers.length}">방문 대상이 없습니다.</td></tr>`;
+    return `<table class="report-table"><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
+  };
+
+  const usedFreeText = { done: false };
+  const renderTextSection = (section) => {
+    if (/목적/.test(section.title)) return `<p>${esc(plan.purpose || "")}</p>`;
+    if (/(효과|기대)/.test(section.title)) return `<p>${esc(doc.note || "")}</p>`;
+    const matched = findAnswer([section.title.replace(/^\d+[.\s]*/, "")]);
+    if (matched) return `<p>${esc(matched)}</p>`;
+    if (!usedFreeText.done && LAST_CUSTOM_FORM_FREETEXT) {
+      usedFreeText.done = true;
+      return `<p>${esc(LAST_CUSTOM_FORM_FREETEXT)}</p>`;
+    }
+    return "";
+  };
+
+  const sectionsHtml = (CUSTOM_FORM_OUTLINE.sections || []).map(section => `
+    <section>
+      <h3>${esc(section.title)}</h3>
+      ${section.kind === "table" ? renderTableSection(section) : renderTextSection(section)}
+    </section>
+  `).join("");
+
+  return `
+    <div class="report-page">
+      <div class="report-title">
+        <div>${esc(plan.projectName || '')}</div>
+        <strong>${esc(doc.title || '출장 기안문')}</strong>
+      </div>
+      <table class="report-table" style="margin-top:14px">
+        <tbody>${headerRows}</tbody>
+      </table>
+      ${sectionsHtml}
+      ${CUSTOM_FORM_OUTLINE.closingText ? `<p style="margin-top:20px">${esc(CUSTOM_FORM_OUTLINE.closingText)}</p>` : ""}
+    </div>
+  `;
+}
+
 // flowpilot-data.js(에이전트 결과)를 계획서 형태로 렌더
 function buildReportFromData(d) {
   const report = document.getElementById("reportPreview");
@@ -1698,14 +1831,26 @@ function buildReportFromData(d) {
   const limit = bud.budgetLimit || plan.budgetLimit || estimatedTotal;
   const excludedCount = allVisits.length - activeVisits.length;
 
-  report.innerHTML = `
-    <div class="report-page">
-      <div class="report-title">
-        <div>${esc(plan.projectName || '현장업무 운영 프로젝트')}</div>
-        <strong>${esc(doc.title || ((plan.region || '') + ' ' + (plan.taskType || '') + ' 계획'))}</strong>
-      </div>
-      <div class="report-author">작성자: ${esc(doc.author || plan.author || '미정')}</div>
-
+  // 자사양식으로 실행했고 문서 틀(헤더 항목·절 구성)을 AI가 뽑아냈으면, 최종 문서를 그 틀
+  // 그대로(같은 절 제목·순서, 표면 같은 표) 다시 그린다. 틀을 못 뽑았으면(구버전 .hwp 등)
+  // 기존처럼 입력한 항목을 표로 나열하는 것으로 대체한다.
+  if (USING_CUSTOM_FORM && CUSTOM_FORM_OUTLINE.sections.length) {
+    report.innerHTML = buildCustomOutlineReportHtml(d);
+    return;
+  }
+  const overviewHtml = USING_CUSTOM_FORM ? `
+      <section>
+        <h3>1. ${esc(plan.projectName || '자사 양식 제출 건')}</h3>
+        <table class="report-table">
+          <tbody>
+            ${LAST_CUSTOM_FORM_ANSWERS.filter(a => a.value && a.value.trim()).map(a => `
+              <tr><td style="width:28%;font-weight:700">${esc(a.label)}</td><td>${esc(a.value)}</td></tr>
+            `).join("") || `<tr><td>입력한 항목이 없습니다.</td></tr>`}
+          </tbody>
+        </table>
+        ${LAST_CUSTOM_FORM_FREETEXT ? `<p class="subheading" style="margin-top:10px">추가 설명</p><p>${esc(LAST_CUSTOM_FORM_FREETEXT)}</p>` : ""}
+      </section>
+  ` : `
       <section>
         <h3>1. 출장개요</h3>
         <p>가. 목적: ${esc(plan.purpose || '')}</p>
@@ -1715,6 +1860,17 @@ function buildReportFromData(d) {
         ${(plan.personnel && plan.personnel.length > 1) ? `<p class="indent note">${plan.personnel.map(p => esc(p.org + ' ' + p.count + '명')).join(', ')}</p>` : ''}
         ${doc.hotel ? `<p>마. 숙소: ${esc(doc.hotel)}</p>` : ''}
       </section>
+  `;
+
+  report.innerHTML = `
+    <div class="report-page">
+      <div class="report-title">
+        <div>${esc(plan.projectName || '현장업무 운영 프로젝트')}</div>
+        <strong>${esc(doc.title || ((plan.region || '') + ' ' + (plan.taskType || '') + ' 계획'))}</strong>
+      </div>
+      <div class="report-author">작성자: ${esc(doc.author || plan.author || '미정')}</div>
+
+      ${overviewHtml}
 
       <section>
         <h3>2. 대상 현황: 총 ${activeVisits.length}건${excludedCount > 0 ? ` <span class="note">(주소 미정 등 제외 ${excludedCount}건)</span>` : ''}</h3>
@@ -1797,6 +1953,11 @@ let RETRY_WITH_REJECTION = null;
 // document까지 이어서 실행하도록 하는 플래그).
 let PENDING_BUDGET_APPROVED = false;
 
+// 자사양식 실행 시점의 입력 스냅샷 — 최종 문서를 "업로드한 자사양식과 같은 레이아웃"으로
+// 그릴 때 이 값을 그대로 쓴다(실행 이후 입력칸을 고쳐도 이미 만든 문서는 안 바뀌게).
+let LAST_CUSTOM_FORM_ANSWERS = [];
+let LAST_CUSTOM_FORM_FREETEXT = "";
+
 function readFormValues() {
   const budgetRejection = RETRY_WITH_REJECTION;
   RETRY_WITH_REJECTION = null;
@@ -1805,13 +1966,17 @@ function readFormValues() {
 
   let payload;
   if (USING_CUSTOM_FORM) {
+    const customFormAnswers = customParsedFields.map(f => ({
+      label: f.label,
+      value: document.getElementById(`dyn_${f.id}`)?.value || "",
+    }));
+    const customFormFreeText = document.getElementById("dynamicFreeText")?.value || "";
+    LAST_CUSTOM_FORM_ANSWERS = customFormAnswers;
+    LAST_CUSTOM_FORM_FREETEXT = customFormFreeText;
     payload = {
       customForm: true,
-      customFormAnswers: customParsedFields.map(f => ({
-        label: f.label,
-        value: document.getElementById(`dyn_${f.id}`)?.value || "",
-      })),
-      customFormFreeText: document.getElementById("dynamicFreeText")?.value || "",
+      customFormAnswers,
+      customFormFreeText,
       author: document.getElementById("dynamicAuthor")?.value || "",
       budgetRule: loadBudgetRule(),
     };
@@ -1973,6 +2138,7 @@ async function runPrototype() {
     report.classList.add("report-hidden");
     report.classList.remove("report-ready");
   }
+  document.getElementById("reportDownloadBar")?.classList.add("report-hidden");
 
   if (typeof hideAgentDetail === "function") hideAgentDetail();
   if (typeof resetPokemon === "function") resetPokemon();
@@ -2125,6 +2291,7 @@ function resetPrototype() {
     report.classList.add("report-hidden");
     report.classList.remove("report-ready");
   }
+  document.getElementById("reportDownloadBar")?.classList.add("report-hidden");
   if (message) {
     message.textContent = "아직 실행 전이에요. ‘AI 업무 계획 생성’을 누르면 5개 Agent가 순서대로 작업합니다.";
   }
@@ -2427,8 +2594,51 @@ function openFinalReport() {
   const report = document.getElementById("reportPreview");
   report.classList.remove("report-hidden");
   report.classList.add("report-ready");
+  document.getElementById("reportDownloadBar")?.classList.remove("report-hidden");
   hideAgentDetail();
   report.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// PDF로 다운로드 — 별도 라이브러리 없이 브라우저 인쇄 기능을 그대로 쓴다.
+// body에 printing-report 클래스를 붙이면(CSS @media print) 화면의 폼·버튼 등은 인쇄에서 빠지고
+// 리포트만 남는다. 인쇄 대화상자에서 "PDF로 저장"을 고르면 된다.
+function downloadReportPdf() {
+  document.body.classList.add("printing-report");
+  const cleanup = () => document.body.classList.remove("printing-report");
+  window.addEventListener("afterprint", cleanup, { once: true });
+  window.print();
+  setTimeout(cleanup, 3000); // afterprint를 안 쏘는 구형 브라우저 대비 안전장치
+}
+
+// Word로 다운로드 — 진짜 .docx를 만드는 대신, MS Word가 열 수 있는 "HTML 기반 .doc" 형식을 쓴다
+// (별도 라이브러리 없이 리포트 화면의 HTML을 그대로 감싸서 저장 — Word/한글 모두 열람 가능).
+function downloadReportWord() {
+  const report = document.getElementById("reportPreview");
+  if (!report || !report.innerHTML.trim()) return;
+  const title = (ACTIVE_DATA?.document?.title || ACTIVE_DATA?.plan?.projectName || "출장_계획서").replace(/[\\/:*?"<>|]/g, "");
+  const styles = `
+    body{font-family:"Noto Serif KR","Batang",serif; font-size:14px; line-height:1.55; color:#111;}
+    table{border-collapse:collapse; width:100%; margin-top:8px;}
+    th,td{border:1px solid #555; padding:6px 8px; vertical-align:top;}
+    th{background:#f3f3f3; font-weight:800; text-align:center;}
+    h3{margin-top:18px;}
+    .report-title{text-align:center; border-top:2px solid #222; border-bottom:2px solid #222; padding:10px;}
+    .report-author{text-align:right; margin:6px 0;}
+    .footnote{font-size:11px; color:#555;}
+  `;
+  const html = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><title>${esc(title)}</title><style>${styles}</style></head>
+<body>${report.innerHTML}</body></html>`;
+  const blob = new Blob(["﻿", html], { type: "application/msword" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${title}.doc`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /* ── 네이버 지도(핀 + 동선) — 리서치 담당 모달 전용 ── */
