@@ -41,6 +41,7 @@
 - Build Command: `npm install`
 - Start Command: `node orchestrator/call-agent --serve`
 - 환경변수: `ANTHROPIC_API_KEY`(실제 키), `USE_LOCAL_CLAUDE`는 설정하지 않거나 `0` (배포 서버에는 로그인된 로컬 claude CLI가 없다)
+- 조직에 워크스페이스가 여러 개라 콘솔에서 발급한 키가 "identity-linked" 타입이면(호출 시 `anthropic-workspace-id is required` 400 에러가 남), `ANTHROPIC_WORKSPACE_ID`(콘솔의 워크스페이스 ID, `wrkspc_...`)도 추가로 넣는다.
 - 네이버 지도를 쓰려면 `NAVER_MAP_CLIENT_ID`, `NAVER_MAP_CLIENT_SECRET`도 함께 넣고, 네이버 클라우드 콘솔의 도메인 허용목록에 배포 도메인을 등록해야 지도가 뜬다.
 
 > 참고: 실제 AI가 계산한 진짜 결과가 필요하면(근사치 말고), `.env`의 `USE_LOCAL_CLAUDE=1`로 로컬에 로그인된 Claude Code 구독을 대신 쓰는 방법도 있다(API 토큰 소진 시 우회용으로 이미 추가되어 있음).
