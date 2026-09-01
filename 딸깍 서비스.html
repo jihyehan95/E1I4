@@ -864,6 +864,10 @@
 <input id="people" type="number"/>
 </div>
 <div>
+<label>참석자</label>
+<input id="attendees" type="text" placeholder="참석자들의 이름을 쉼표로 구분해 입력해 주세요 (예: 홍길동, 김철수)"/>
+</div>
+<div>
 <label>예산</label>
 <input id="budget" type="text" inputmode="numeric" oninput="formatMoneyInput(this)"/>
 </div><div><label>프로젝트명</label><input id="projectName"/></div><div><label>작성자</label><input id="author"/></div>
@@ -963,7 +967,9 @@
 <!-- 에이전트 파이프라인 결과 주입 (orchestrator가 생성). 없으면 아래 스크립트가 기존 데모 로직으로 폴백 -->
 <script src="flowpilot-data.js"></script>
 <script>
-const ORCHESTRATOR_BASE = "http://localhost:8788";
+// 빈 문자열이면 이 화면을 서빙한 서버(같은 origin)로 요청한다 — 로컬(node orchestrator/call-agent
+// --serve 후 http://localhost:8788/ 로 접속)과 배포(Render) 양쪽에서 그대로 동작한다.
+const ORCHESTRATOR_BASE = "";
 const GEOCODE_ENDPOINT = `${ORCHESTRATOR_BASE}/api/geocode`;
 const CONFIG_ENDPOINT = `${ORCHESTRATOR_BASE}/config`;
 
@@ -1183,7 +1189,7 @@ let USING_CUSTOM_FORM = false;
 
 function resetDefaultFormInputs() {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-  ["region","startDate","endDate","people","budget","projectName","author","purpose","conditions"].forEach(id => set(id, ""));
+  ["region","startDate","endDate","people","attendees","budget","projectName","author","purpose","conditions"].forEach(id => set(id, ""));
   const taskType = document.getElementById("taskType");
   if (taskType) taskType.selectedIndex = 0;
   ["startDate","endDate"].forEach(id => syncDateTimeEmptyClass(document.getElementById(id)));
@@ -1538,6 +1544,14 @@ function daysBetween(start, end) {
   return Math.max(0, Math.round((d2 - d1) / 86400000));
 }
 
+// 문서 제목은 프로젝트명이 아니라 "목적"에서 핵심 문구를 뽑아 만든다(첫 줄만 쓰고 뒤에 "계획"을 붙임).
+function deriveTitleFromPurpose(purpose) {
+  const text = (purpose || "").trim().split(/\n/)[0].trim();
+  if (!text) return "";
+  const short = text.length > 30 ? text.slice(0, 30).trim() + "…" : text;
+  return `${short} 계획`;
+}
+
 // AI 서버가 꺼져 있을 때, 폼 입력만으로 FLOWPILOT_DATA와 같은 모양(plan/route/schedule/budget/document)의
 // 임시 결과를 만든다. 지오코딩을 하지 않으므로 좌표는 없고(지도 핀 없음), 일정·경비는 근사치다.
 function buildFallbackData() {
@@ -1546,6 +1560,7 @@ function buildFallbackData() {
   const startDate = document.getElementById("startDate")?.value || "";
   const endDate = document.getElementById("endDate")?.value || "";
   const people = Number(document.getElementById("people")?.value || 0);
+  const attendees = document.getElementById("attendees")?.value || "";
   const budget = Number((document.getElementById("budget")?.value || "0").replace(/,/g, ""));
   const purpose = document.getElementById("purpose")?.value || "업무 목적 미입력";
   const visitsText = document.getElementById("visits")?.value || "";
@@ -1620,7 +1635,7 @@ function buildFallbackData() {
       reason: "AI 서버 미실행 — 폼 입력만으로 만든 임시 결과입니다.",
       projectName, taskType, region,
       period: { start: startDate, end: endDate, nights, days },
-      purpose, peopleTotal: people, personnel: [], budgetLimit: budget, expenseCategory: "", author, background: ""
+      purpose, peopleTotal: people, personnel: [], attendees, budgetLimit: budget, expenseCategory: "", author, background: ""
     },
     route: { state: "ok", label: "완료", reason: "", visits: routeVisits },
     schedule: { state: "ok", label: "완료", reason: "", rows: scheduleRows },
@@ -1631,7 +1646,7 @@ function buildFallbackData() {
     },
     document: {
       state: "ok", label: "완료",
-      title: `${region} ${taskType} 계획`, author, createdAt: new Date().toISOString().slice(0, 10),
+      title: deriveTitleFromPurpose(purpose) || `${region} ${taskType} 계획`, author, createdAt: new Date().toISOString().slice(0, 10),
       hotel: conditions.hotel, note: conditions.extra.length ? conditions.extra.join(" · ") : ""
     }
   };
@@ -1858,6 +1873,7 @@ function buildReportFromData(d) {
         <p>다. 지역: ${esc(plan.region || '')}</p>
         <p>라. 인원: 총 ${(plan.peopleTotal || 0).toLocaleString()}명</p>
         ${(plan.personnel && plan.personnel.length > 1) ? `<p class="indent note">${plan.personnel.map(p => esc(p.org + ' ' + p.count + '명')).join(', ')}</p>` : ''}
+        ${plan.attendees ? `<p class="indent note">참석자: ${esc(plan.attendees)}</p>` : ''}
         ${doc.hotel ? `<p>마. 숙소: ${esc(doc.hotel)}</p>` : ''}
       </section>
   `;
@@ -1866,7 +1882,7 @@ function buildReportFromData(d) {
     <div class="report-page">
       <div class="report-title">
         <div>${esc(plan.projectName || '현장업무 운영 프로젝트')}</div>
-        <strong>${esc(doc.title || ((plan.region || '') + ' ' + (plan.taskType || '') + ' 계획'))}</strong>
+        <strong>${esc(doc.title || deriveTitleFromPurpose(plan.purpose) || ((plan.region || '') + ' ' + (plan.taskType || '') + ' 계획'))}</strong>
       </div>
       <div class="report-author">작성자: ${esc(doc.author || plan.author || '미정')}</div>
 
@@ -1912,7 +1928,7 @@ function buildReportFromData(d) {
       </section>
 
       <section class="budget-section">
-        <h3>4. 예산: 금${limit.toLocaleString()}원</h3>
+        <h3>4. 예산: 금${estimatedTotal.toLocaleString()}원</h3>
         <div class="unit">(단위: 원)</div>
         <table class="report-table budget-table">
           <thead>
@@ -1942,7 +1958,7 @@ function buildReportFromData(d) {
 }
 
 
-const ORCHESTRATOR_ENDPOINT = "http://localhost:8788/run";
+const ORCHESTRATOR_ENDPOINT = `${ORCHESTRATOR_BASE}/run`;
 
 // 예산 반려 후 "AI에게 반려 사유 전달해 후보 다시 찾기"를 누르면 여기에 담기고,
 // 다음 readFormValues() 호출 한 번에만 실려 나간 뒤 비워진다(그 다음 일반 실행에는 안 딸려간다).
@@ -1987,6 +2003,7 @@ function readFormValues() {
       startDate: document.getElementById("startDate")?.value || "",
       endDate: document.getElementById("endDate")?.value || "",
       people: document.getElementById("people")?.value || "",
+      attendees: document.getElementById("attendees")?.value || "",
       budget: (document.getElementById("budget")?.value || "").replace(/,/g, ""),
       purpose: document.getElementById("purpose")?.value || "",
       visits: document.getElementById("visits")?.value || "",
