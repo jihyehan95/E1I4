@@ -24,6 +24,22 @@ const ENV_PATH = path.join(ROOT, ".env");
 const AGENTS_DIR = path.join(ROOT, ".claude", "agents");
 const STAGE_CACHE_PATH = path.join(os.tmpdir(), "orchestrator-stage-cache.json");
 
+// 화면(정적 파일) 서빙 허용목록 — 요청 경로 → 저장소 루트 기준 파일. "/"는 랜딩페이지가 먼저 뜨게 한다.
+const STATIC_FILES = {
+  "/": "ddalkkak_ai_landing.html",
+  "/index.html": "ddalkkak_ai_landing.html",
+  "/ddalkkak_ai_landing.html": "ddalkkak_ai_landing.html",
+  "/딸깍 서비스.html": "딸깍 서비스.html",
+  "/로고.jpg": "로고.jpg",
+  "/flowpilot-data.js": "flowpilot-data.js",
+};
+const STATIC_CONTENT_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
+};
+
 function readEnvFile(envPath) {
   if (!fs.existsSync(envPath)) return {};
   const env = {};
@@ -37,18 +53,24 @@ function readEnvFile(envPath) {
   return env;
 }
 
+// Render 등 배포 환경은 .env 파일 대신 process.env로 값을 주입하므로, process.env를 먼저 보고
+// 없으면(로컬 개발용) .env 파일을 본다.
 function readApiKeyFromEnvFile(envPath) {
+  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
   if (!fs.existsSync(envPath)) {
-    throw new Error(`.env 파일을 찾을 수 없습니다: ${envPath}`);
+    throw new Error(`ANTHROPIC_API_KEY가 환경변수에 없고, .env 파일도 찾을 수 없습니다: ${envPath}`);
   }
   const value = readEnvFile(envPath).ANTHROPIC_API_KEY;
-  if (!value) throw new Error(".env에 ANTHROPIC_API_KEY 줄이 없거나 값이 비어 있습니다.");
+  if (!value) throw new Error("ANTHROPIC_API_KEY가 환경변수에도, .env 파일에도 없습니다.");
   return value;
 }
 
-// .env의 USE_LOCAL_CLAUDE=1이면 5단계 파이프라인이 API 키 대신 이 컴퓨터에 로그인된
+// USE_LOCAL_CLAUDE=1이면 5단계 파이프라인이 API 키 대신 이 컴퓨터에 로그인된
 // claude CLI(Claude 구독)를 호출한다 — 워크스페이스 API 사용량 한도 우회용.
+// 배포 서버에는 로그인된 claude CLI가 없으므로 process.env를 우선하고, 없으면 .env 파일을 본다.
 function isLocalClaudeEnabled(envPath) {
+  const fromEnv = process.env.USE_LOCAL_CLAUDE;
+  if (fromEnv !== undefined) return fromEnv.trim() === "1";
   return (readEnvFile(envPath).USE_LOCAL_CLAUDE || "").trim() === "1";
 }
 
@@ -134,8 +156,8 @@ function runLocalClaude({ systemPrompt, userText, jsonSchema, effort }) {
 // 동작한다 — 오늘 범위는 로컬 데모이므로 키가 없어도 파이프라인 자체는 막지 않는다.
 function readNaverCredentials(envPath) {
   const env = readEnvFile(envPath);
-  const clientId = env.NAVER_MAP_CLIENT_ID || "";
-  const clientSecret = env.NAVER_MAP_CLIENT_SECRET || "";
+  const clientId = process.env.NAVER_MAP_CLIENT_ID || env.NAVER_MAP_CLIENT_ID || "";
+  const clientSecret = process.env.NAVER_MAP_CLIENT_SECRET || env.NAVER_MAP_CLIENT_SECRET || "";
   return clientId && clientSecret ? { clientId, clientSecret } : null;
 }
 
@@ -448,7 +470,7 @@ function buildPlanInput(form) {
       "일정 (기간, 필수 목적지)",
       `기간: ${form.startDate} ~ ${form.endDate}\n\n방문 대상:\n${form.visits}`,
     ),
-    section("인원", `총 ${form.people}명`),
+    section("인원", `총 ${form.people}명${form.attendees ? `\n참석자: ${form.attendees}` : ""}`),
     section(
       "예산",
       `예산 상한: ${form.budget}원\n지출항목/기관: ${form.projectName} / ${form.taskType}`,
@@ -929,6 +951,25 @@ function runServer(port) {
       return;
     }
 
+    // 배포(Render 등)에서는 이 서버 하나가 API와 화면(정적 파일)을 같이 서빙한다 — 저장소의
+    // 아무 파일이나 열어주면 안 되니(.env, .claude 지시문 등), 실제로 화면에 필요한 파일만
+    // 허용목록으로 관리한다. "/" 는 랜딩페이지를 먼저 보여주고, 거기서 서비스 화면으로 넘어간다.
+    if (req.method === "GET" && STATIC_FILES[decodeURIComponent(new URL(req.url, "http://localhost").pathname)]) {
+      const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
+      const filePath = path.join(ROOT, STATIC_FILES[pathname]);
+      fs.readFile(filePath, (err, data) => {
+        if (err) {
+          res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+          res.end("Not found");
+          return;
+        }
+        const ext = path.extname(filePath);
+        res.writeHead(200, { "Content-Type": STATIC_CONTENT_TYPES[ext] || "application/octet-stream" });
+        res.end(data);
+      });
+      return;
+    }
+
     if (req.method === "GET" && req.url.startsWith("/config")) {
       // 지도(Naver Maps JS SDK) 스크립트를 만들 때 화면이 필요로 하는 값만 내려준다.
       // 클라이언트 ID는 NCP 콘솔에서 도메인으로 제한하는 공개용 값이고, 시크릿은 여기서 절대 안 내려준다.
@@ -1057,7 +1098,8 @@ if (aggregateFromIndex !== -1) {
       process.exit(1);
     });
 } else if (serveIndex !== -1) {
-  const port = Number(process.argv[serveIndex + 1]) || 8788;
+  // Render 등 배포 환경은 리슨할 포트를 PORT 환경변수로 지정한다 — 명령줄 인자보다 우선한다.
+  const port = Number(process.env.PORT) || Number(process.argv[serveIndex + 1]) || 8788;
   runServer(port);
 } else {
   console.error("사용법: node orchestrator/call-agent --serve [port]");

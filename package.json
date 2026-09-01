@@ -3,6 +3,12 @@
   "private": true,
   "version": "0.0.0",
   "description": "출장 기획을 지원해주는 에이전트 팀 저장소",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node orchestrator/call-agent --serve"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.1",
     "adm-zip": "^0.5.16",

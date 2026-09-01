@@ -14,7 +14,24 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 
-const ENV_PATH = path.join(__dirname, "..", ".env");
+const ROOT = path.join(__dirname, "..");
+const ENV_PATH = path.join(ROOT, ".env");
+
+// call-agent와 동일한 화면 서빙 허용목록 — 데모용으로 mock-server만 켜도 화면이 같은 주소에서 뜬다.
+const STATIC_FILES = {
+  "/": "ddalkkak_ai_landing.html",
+  "/index.html": "ddalkkak_ai_landing.html",
+  "/ddalkkak_ai_landing.html": "ddalkkak_ai_landing.html",
+  "/딸깍 서비스.html": "딸깍 서비스.html",
+  "/로고.jpg": "로고.jpg",
+  "/flowpilot-data.js": "flowpilot-data.js",
+};
+const STATIC_CONTENT_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
+};
 
 // 지도 스크립트용 클라이언트 ID는 공개용 값이라(NCP 콘솔에서 도메인으로 제한) .env에 있으면
 // 그대로 내려준다 — 있으면 mock-server를 켠 채로도 지도가 실제로 뜬다. 없으면 call-agent와
@@ -48,6 +65,14 @@ function formatDate(value) {
   if (Number.isNaN(d.getTime())) return value;
   const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
   return `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.(${weekdays[d.getDay()]})`;
+}
+
+// 문서 제목은 프로젝트명이 아니라 "목적"에서 핵심 문구를 뽑아 만든다(첫 줄만 쓰고 뒤에 "계획"을 붙임).
+function deriveTitleFromPurpose(purpose) {
+  const text = (purpose || "").trim().split(/\n/)[0].trim();
+  if (!text) return "";
+  const short = text.length > 30 ? text.slice(0, 30).trim() + "…" : text;
+  return `${short} 계획`;
 }
 
 function daysBetween(start, end) {
@@ -179,6 +204,7 @@ function buildData(form) {
   const startDate = form.startDate || "";
   const endDate = form.endDate || "";
   const people = Number(form.people || 0);
+  const attendees = form.attendees || "";
   const budget = Number(String(form.budget || "0").replace(/,/g, ""));
   const purpose = form.purpose || "업무 목적 미입력";
   const author = form.author || "미정";
@@ -244,7 +270,7 @@ function buildData(form) {
       state: "ok", label: "완료", reason: "로컬 모의 서버 — 폼 입력만으로 만든 데모용 결과입니다 (실제 API 호출 없음).",
       projectName, taskType, region,
       period: { start: startDate, end: endDate, nights, days },
-      purpose, peopleTotal: people, personnel: [], budgetLimit: budget, expenseCategory: "", author, background: "",
+      purpose, peopleTotal: people, personnel: [], attendees, budgetLimit: budget, expenseCategory: "", author, background: "",
     },
     route: { state: "ok", label: "완료", reason: "", visits: routeVisits, costCandidates: buildCostCandidates(budgetRule) },
     schedule: { state: "ok", label: "완료", reason: "", rows: scheduleRows },
@@ -253,7 +279,7 @@ function buildData(form) {
       rows: budgetRows, ruleTotal, estimatedTotal, budgetLimit: budget,
     },
     document: {
-      state: "ok", label: "완료", title: `${region} ${taskType} 계획`, author, createdAt: new Date().toISOString().slice(0, 10),
+      state: "ok", label: "완료", title: deriveTitleFromPurpose(purpose) || `${region} ${taskType} 계획`, author, createdAt: new Date().toISOString().slice(0, 10),
       hotel: conditions.hotel, note: conditions.extra.length ? conditions.extra.join(" · ") : "",
     },
   };
@@ -287,6 +313,22 @@ function runServer(port) {
     if (req.method === "OPTIONS") {
       res.writeHead(204);
       res.end();
+      return;
+    }
+
+    if (req.method === "GET" && STATIC_FILES[decodeURIComponent(new URL(req.url, "http://localhost").pathname)]) {
+      const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
+      const filePath = path.join(ROOT, STATIC_FILES[pathname]);
+      fs.readFile(filePath, (err, data) => {
+        if (err) {
+          res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+          res.end("Not found");
+          return;
+        }
+        const ext = path.extname(filePath);
+        res.writeHead(200, { "Content-Type": STATIC_CONTENT_TYPES[ext] || "application/octet-stream" });
+        res.end(data);
+      });
       return;
     }
 
